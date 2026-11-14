@@ -108,7 +108,7 @@ final class HPADS_List_Table extends WP_List_Table {
         foreach (HPADS_Core::all('creative') as $ad) { if (HPADS_Placements::is_template($ad)) { continue; } $state=HPADS_Placements::time_state($ad); $counts[$state]++; $counts['all']++; if (in_array($state,['current','scheduled'],true)) { $counts['open']++; } }
         $view=sanitize_key($_GET['time_view'] ?? 'open'); $out=[];
         foreach (['open'=>'Current & Scheduled','past'=>'Past / Expired','inactive'=>'Inactive','all'=>'All'] as $key=>$label) {
-            $url=add_query_arg(['page'=>'hpads-creative','time_view'=>$key],admin_url('admin.php'));
+            $url=add_query_arg(['page'=>(($_GET['page'] ?? '')==='hpads-dashboard'?'hpads-dashboard':'hpads-creative'),'time_view'=>$key],admin_url('admin.php'));
             $out[$key]='<a href="'.esc_url($url).'"'.($view===$key?' class="current" aria-current="page"':'').'>'.esc_html($label).' <span class="count">('.$counts[$key].')</span></a>';
         }
         return $out;

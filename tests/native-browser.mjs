@@ -1,6 +1,6 @@
-import fs from 'node:fs';import path from 'node:path';const{chromium}=await import(process.env.HWADS_PLAYWRIGHT_MODULE || 'playwright');
-const root=process.env.HWADS_FIXTURE_ROOT || new URL('../',import.meta.url).pathname,fixture=JSON.parse(fs.readFileSync(root+'wordpress-cpt/wp-content/hwads-native-fixture.json','utf8'));
-const browser=await chromium.launch({headless:true,args:['--disable-features=ViewTransition,ViewTransitionOnNavigation'],executablePath:process.env.HWADS_CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'});const page=await browser.newPage({viewport:{width:1500,height:1100}});const errors=[];page.on('pageerror',e=>errors.push(e.stack || e.message));let saved;
+import fs from 'node:fs';import path from 'node:path';const{chromium}=await import('/Users/grindstone/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs');
+const root=new URL('../',import.meta.url).pathname,fixture=JSON.parse(fs.readFileSync(root+'wordpress-cpt/wp-content/hwads-native-fixture.json','utf8'));
+const browser=await chromium.launch({headless:true,args:['--disable-features=ViewTransition,ViewTransitionOnNavigation'],executablePath:'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'});const page=await browser.newPage({viewport:{width:1500,height:1100}});const errors=[];page.on('pageerror',e=>errors.push(e.stack || e.message));let saved;
 await page.route('**/*',async route=>{
  const req=route.request(),url=new URL(req.url());if(url.hostname!=='hpads.test'){await route.abort();return;}
  if(url.pathname==='/wp-admin/post.php'){
@@ -34,6 +34,7 @@ await page.goto('https://hpads.test/wp-admin/post.php?post='+fixture.playlist_pi
 if(await page.locator('form#post form').count())throw Error('nested playlist forms');if(await page.locator('.hpads-item .creative').count()!==1)throw Error('saved playlist placement missing');
 if(await page.locator('#publish').inputValue()!=='Update' || await page.locator('#save-post').count() || await page.locator('[name="hwads_publish"]').count())throw Error('published playlist should use standard Update without Save Draft or custom publish buttons');
 await page.frameLocator('#hwads-inline-playlist').locator('#stage img').waitFor();
+if(await page.locator('#postbox-container-1 select[name="parent_id"]').count()!==1 || await page.locator('#postbox-container-1 select[name="purpose"]').count()!==1 || await page.locator('#hwads-details select[name="parent_id"],#hwads-details select[name="purpose"]').count())throw Error('playlist Location and Purpose are not exclusively in the native sidebar');
 if(await page.locator('.hpads-item .duration').inputValue()!=='9')throw Error('saved duration missing');if(!await page.getByRole('button',{name:'New Placement from Media Library',exact:true}).isVisible())throw Error('playlist media action missing');
 const pe=await page.locator('#titlediv').boundingBox(),bucket=await page.locator('#hwads-details').boundingBox();if(!(bucket.y>pe.y)||await page.locator('#content').count())throw Error('playlist should have a bucket below its title, without web content');
 await page.screenshot({path:root+'tests/native-playlist-screen.png',fullPage:true});await page.locator('.hpads-item .placement-title').fill('Browser Card Name');await page.locator('.hpads-item .duration').fill('14');
@@ -56,4 +57,16 @@ await page.goto('https://hpads.test/wp-admin/post.php?post='+fixture.venue_pid+'
 if(await page.locator('#publish').inputValue()!=='Save Venue' || !await page.locator('input[name="venue_active"]').isChecked())throw Error('venue save/status UI incorrect');
 console.log('PASS: native device details/status/save sidebar and venue Save Venue/active controls.');
 await page.goto('https://hpads.test/wp-admin/post-new.php?post_type=hpads_playlist');await page.locator('#hwads-details').waitFor();if(await page.locator('#publish').inputValue()!=='Publish' || !await page.locator('#save-post').isVisible())throw Error('unpublished playlist must show standard Save Draft and Publish');console.log('PASS: unpublished playlist has Save Draft/Publish; published playlist has Update and embedded player.');
+await page.goto('https://hpads.test/wp-admin/post.php?post='+fixture.playlist_pid+'&action=edit');
+if(!(await page.locator('#hwads-embed input').inputValue()).includes('id="'+fixture.playlist+'"'))throw Error('playlist copy shortcode ID incorrect');
+await page.goto('https://hpads.test/wp-admin/post.php?post='+fixture.placement_pid+'&action=edit');
+if(!(await page.locator('#hwads-embed input').inputValue()).includes('id="'+fixture.placement+'"'))throw Error('placement copy shortcode ID incorrect');
+await page.goto('https://hpads.test/wp-admin/post.php?post='+fixture.template_pid+'&action=edit');if(await page.locator('#hwads-embed').count())throw Error('templates must not have embed box');
+for(const type of ['playlist','placement']){
+ await page.route('https://hpads.test/?hwads_embed='+type+'*',r=>r.fulfill({contentType:'text/html',body:fs.readFileSync(root+'tests/embed-'+type+'.html','utf8')}));
+ await page.goto('https://hpads.test/?hwads_embed='+type+'&id='+fixture[type]);await page.locator('#hwads-display img').waitFor();
+ if(await page.locator('#wpadminbar').count())throw Error('public embed contains admin chrome');
+ if(!(await page.locator('#hwads-display a').getAttribute('href')))throw Error('public embed missing destination');
+}
+console.log('PASS: copy-ready playlist/placement shortcode IDs, no template embeds, and standalone public playback without admin chrome.');
 const appErrors=errors.filter(x=>!x.includes('Transition was aborted because of invalid state. ViewTransition opt-in disabled'));if(appErrors.length)throw Error(appErrors.join('\n'));if(errors.length)console.log('NOTE: Chrome cross-document transition aborted on the stubbed POST response; application assertions passed.');await browser.close();

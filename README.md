@@ -1,10 +1,10 @@
-# HWADS 0.8.0 — WordPress editor testing build
+# HWADS 0.8.1 — WordPress editor testing build
 
 Centralized WordPress management for venues, locations, devices, advertisers, ad templates, placements and playlists. Install once on the HWADS control site.
 
 ## Install
 
-Download **[dist/hwads-0.8.0.zip](dist/hwads-0.8.0.zip)** and upload it under WordPress → Plugins → Add New → Upload Plugin. Replace the existing plugin when prompted. Use this install ZIP, not the repository's full source ZIP. Reload any open editor tabs after replacing it. Requires WordPress 6.4+, PHP 8.0+ and HTTPS.
+Download **[dist/hwads-0.8.1.zip](dist/hwads-0.8.1.zip)** and upload it under WordPress → Plugins → Add New → Upload Plugin. Replace the existing plugin when prompted. Use this install ZIP, not the repository's full source ZIP. Reload any open editor tabs after replacing it. Requires WordPress 6.4+, PHP 8.0+ and HTTPS.
 
 A fresh installation uses native post storage immediately; it does not need a migration. Internal `hpads` folder/database/API identifiers are retained for compatibility. No existing data is deleted.
 
@@ -13,6 +13,12 @@ A fresh installation uses native post storage immediately; it does not need a mi
 Use `[hwads_playlist id="123"]` or `[hwads_placement id="456"]` on the central WordPress site. Each editor supplies its correct ID and ready-to-copy shortcode plus iframe code for other websites. Optional `ratio="9/16"` supports portrait content (also 16/9, 4/3 and 1/1). Templates cannot be embedded.
 
 Public embeds serve the latest published playlist snapshot, honoring placement schedules and full-length video playback. Draft edits remain private until the playlist is republished. Playback refreshes publication metadata every five minutes while visible. These embeds do not yet collect engagement metrics or display QR overlays. Host security headers must permit external framing of the public embed route.
+
+## Dashboard and Pi player
+
+Dashboard defaults to My Ad Placements. The Show on my dashboard selector saves an individual preference, with Devices available only when selected. Existing scoped list permissions apply.
+
+The separate `player/` package contains the Python Pi sync/player and installation instructions. It uses device-key authentication, verified atomic downloads, offline fallback, one persistent mpv window and persistent disable/enable controls. Install this on the Pi, not as a WordPress plugin. On-device testing is still required.
 
 ## What to test
 
@@ -36,4 +42,4 @@ Tracking, QR positioning, billing/boost, full self-service and physical Pi synch
 
 ## Source and checks
 
-`plugin/hpads/` contains the plugin. `tools/build_plugin.py` builds the install ZIP. `tests/native.php` exercises native saves and authorization in a disposable WordPress fixture; the browser test uses actual rendered WordPress screens and Media Library UI with fixture attachment/POST responses. Real site databases, media, credentials and the fixture are not included. See docs/VALIDATION-0.8.0.md.
+`plugin/hpads/` contains the plugin. `tools/build_plugin.py` builds the install ZIP. `tests/native.php` exercises native saves and authorization in a disposable WordPress fixture; the browser test uses actual rendered WordPress screens and Media Library UI with fixture attachment/POST responses. Real site databases, media, credentials and the fixture are not included. See docs/VALIDATION-0.8.1.md.

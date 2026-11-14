@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.1 — 2026-11-14
+
+- Dashboard defaults to My Ad Placements; each user can save their own list preference. Devices are optional. Preferences use a WordPress nonce and retain scoped access.
+- Added a separate Pi sync/player 0.1.0 package: device-key API access, ETag polling, checksum-verified complete activation, offline fallback, schedules, orientation, heartbeat and persistent playback/disable controls. Requires on-device verification.
+
 ## 0.8.0 — 2026-11-14
 
 - Added playlist/placement shortcodes and standalone public iframe embeds, with copy-ready codes and IDs in their editors. Templates and unpublished drafts are excluded.

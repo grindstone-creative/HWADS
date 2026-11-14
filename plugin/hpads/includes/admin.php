@@ -75,10 +75,21 @@ final class HPADS_Admin {
         echo '</div>';
     }
     static function dashboard() {
-        echo '<div class="hpads-cards">';
-        foreach (['company','location','device','advertiser','playlist'] as $k) { echo '<a class="hpads-card" href="'.esc_url(self::url($k)).'"><strong>'.count(HPADS_Core::all($k)).'</strong> '.esc_html(self::PAGES[$k]).'</a>'; }
-        echo '</div><h2>Get started</h2><ol><li>Create a venue company and a location.</li><li>Create advertisers and upload media, or upload house media for a location.</li><li>Create primary and house playlists. Save a draft, review, then publish.</li><li>Assign the playlists to the location or individual devices.</li><li>Create each device and copy its key into your player configuration.</li></ol><p>Ads follow location eligibility → account manager review → venue review → playlist publication. Advertiser and venue teams manage their own ads; proof-of-play remains planned.</p>';
-        self::listing('device',false);
+        $choices=['creative'=>'My Ad Placements','playlist'=>'Playlists','company'=>'Venues','location'=>'Locations','advertiser'=>'Advertisers','device'=>'Devices'];
+        if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['hwads_dashboard_view'])) {
+            check_admin_referer('hwads_dashboard_preferences');
+            $view=sanitize_key(wp_unslash($_POST['hwads_dashboard_view']));
+            if (isset($choices[$view])) { update_user_meta(get_current_user_id(),'hwads_dashboard_view',$view); }
+        }
+        $view=get_user_meta(get_current_user_id(),'hwads_dashboard_view',true);
+        if (!isset($choices[$view])) { $view='creative'; }
+        echo '<form method="post" action="'.esc_url(self::url('dashboard')).'">';
+        wp_nonce_field('hwads_dashboard_preferences');
+        echo '<p><label for="hwads-dashboard-view">Show on my dashboard </label><select id="hwads-dashboard-view" name="hwads_dashboard_view">';
+        foreach ($choices as $key=>$label) { echo '<option value="'.esc_attr($key).'" '.selected($view,$key,false).'>'.esc_html($label).'</option>'; }
+        echo '</select> ';submit_button('Save View','secondary','submit',false);echo '</p></form>';
+        echo '<h2>'.esc_html($choices[$view]).'</h2>';
+        self::listing($view,false);
     }
     static function can_add($kind) {
         if ($kind==='creative') { return (bool)HPADS_Ads::owners(true); }

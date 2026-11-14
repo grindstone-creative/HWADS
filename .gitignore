@@ -8,3 +8,6 @@ wp-config.php
 .DS_Store
 artifacts/
 uploads/
+
+__pycache__/
+*.pyc

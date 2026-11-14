@@ -1,0 +1,10 @@
+node_modules/
+wordpress*/
+*.sqlite*
+*.log
+wp-config.php
+.env
+.env.*
+.DS_Store
+artifacts/
+uploads/

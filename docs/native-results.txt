@@ -1,0 +1,24 @@
+PASS: fresh activation immediately uses post storage without migration
+PASS: native new-post screen permits authorized author before logical ID exists
+PASS: native new ad template is adopted without duplicate post
+PASS: logical/native identity mapping preserved
+PASS: native text/code editor body saved with template
+PASS: selected media saved
+PASS: native template update synchronizes canonical content
+PASS: native new playlist adopts its own WordPress post
+PASS: native placement saves destination and media
+PASS: independent transition choices saved
+PASS: native playlist saves bucket order
+PASS: native Save Draft does not publish players
+PASS: native Save and Publish action creates immutable version
+PASS: published item has resolved image duration
+PASS: published landing snapshots native content
+PASS: native draft edits do not leak into published landing
+PASS: placement edit link opens actual WordPress post editor
+PASS: playlist edit link opens actual WordPress editor
+PASS: ad editor uses native Visual/Text editor
+PASS: playlist has a native bucket editor without web content
+PASS: foreign advertiser cannot edit native template
+PASS: forged native save rejected
+NATIVE TOTAL: 22 checks passed
+

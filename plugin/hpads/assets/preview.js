@@ -1,0 +1,17 @@
+(()=>{
+ const items=JSON.parse(document.getElementById('hpads-preview-data').textContent),stage=document.getElementById('stage'),status=document.getElementById('status'),all=document.getElementById('all-dates');
+ let index=-1,token=0,timer,paused=false,current,remaining=0,deadline=0;
+ function eligible(){const now=Date.now();return items.filter(x=>all.checked || ((!x.start || Date.parse(x.start)<=now)&&(!x.end || Date.parse(x.end)>now)));}
+ function frames(name,exit){let a={opacity:0},b={opacity:1};if(name.startsWith('slide-')){const dir=name.slice(6),axis=['left','right'].includes(dir)?'X':'Y',sign=['left','up'].includes(dir)?-1:1;a={transform:`translate${axis}(${sign*100}%)`};b={transform:`translate${axis}(0%)`};}else if(name==='zoom'){a={opacity:0,transform:'scale(.8)'};b={opacity:1,transform:'scale(1)'};}return exit?[b,a]:[a,b];}
+ async function transition(media,name,exit){if(!media || name==='none')return;try{await media.animate(frames(name,exit),{duration:500,fill:'forwards',easing:'ease-in-out'}).finished;}catch{}}
+ function schedule(ms){clearTimeout(timer);remaining=ms;deadline=Date.now()+ms;if(!paused)timer=setTimeout(()=>show(1),ms);}
+ async function show(step){const run=++token;clearTimeout(timer);const list=eligible();if(!list.length){stage.replaceChildren();status.textContent='No active placements for this date. Enable “Include scheduled/expired” to inspect them.';return;}
+  const old=current;current=null;if(old){if(old.tagName==='VIDEO')old.pause();await transition(old,old.dataset.exit,true);}if(run!==token)return;
+  index=(index+step+list.length)%list.length;const item=list[index],media=document.createElement(item.video?'video':'img');current=media;media.dataset.exit=item.exit;media.src=item.url;
+  if(item.video){media.muted=true;media.playsInline=true;media.controls=true;media.addEventListener('ended',()=>{if(run===token && !paused)show(1);},{once:true});}else{media.alt=item.title;}
+  media.addEventListener('error',()=>{if(run===token){status.textContent=item.title+': media unavailable; advancing.';schedule(3000);}},{once:true});stage.replaceChildren(media);status.textContent=`${index+1} / ${list.length} · ${item.title} · ${item.video?'Full video':item.seconds+' seconds'}`;
+  await transition(media,item.entrance,false);if(run!==token)return;if(item.video){if(!paused)media.play().catch(()=>{status.textContent+=' · Press play on the video.';});}else schedule(Math.max(1,Number(item.seconds))*1000);
+ }
+ document.getElementById('next').onclick=()=>show(1);document.getElementById('previous').onclick=()=>show(-1);all.onchange=()=>{index=-1;show(1);};
+ document.getElementById('pause').onclick=e=>{paused=!paused;e.target.textContent=paused?'Resume':'Pause';if(current && current.tagName==='VIDEO'){if(paused)current.pause();else current.play().catch(()=>{});}else if(paused){remaining=Math.max(0,deadline-Date.now());clearTimeout(timer);}else schedule(remaining || 1000);};show(1);
+})();

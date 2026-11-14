@@ -6,7 +6,7 @@ final class HPADS_Post_Types {
     static function register() {
         foreach (self::TYPES as $type=>$label) {
             $singular=['hpads_template'=>'Ad Template','hpads_placement'=>'Ad Placement','hpads_playlist'=>'Playlist'][$type] ?? rtrim($label,'s');
-            register_post_type($type,['label'=>$label,'labels'=>['name'=>$label,'singular_name'=>$singular,'add_new_item'=>'Add New '.$singular,'edit_item'=>'Edit '.$singular,'new_item'=>'New '.$singular],'public'=>false,'publicly_queryable'=>false,'show_ui'=>true,'show_in_menu'=>false,'show_in_rest'=>false,'rewrite'=>false,'supports'=>$type==='hpads_playlist'?['title']:['title','editor'],'capabilities'=>['edit_posts'=>'hpads_access','create_posts'=>'hpads_access','publish_posts'=>HPADS_Native_Editor::supports($type)?'hpads_access':'do_not_allow','delete_posts'=>'do_not_allow','edit_others_posts'=>'hpads_access','read_private_posts'=>'hpads_access'],'map_meta_cap'=>true,'delete_with_user'=>false]);
+            register_post_type($type,['label'=>$label,'labels'=>['name'=>$label,'singular_name'=>$singular,'add_new_item'=>'Add New '.$singular,'edit_item'=>'Edit '.$singular,'new_item'=>'New '.$singular],'public'=>false,'publicly_queryable'=>false,'show_ui'=>true,'show_in_menu'=>false,'show_in_rest'=>false,'rewrite'=>false,'supports'=>in_array($type,['hpads_template','hpads_placement'],true)?['title','editor']:['title'],'capabilities'=>['edit_posts'=>'hpads_access','create_posts'=>'hpads_access','publish_posts'=>HPADS_Native_Editor::supports($type)?'hpads_access':'do_not_allow','delete_posts'=>'do_not_allow','edit_others_posts'=>'hpads_access','read_private_posts'=>'hpads_access'],'map_meta_cap'=>true,'delete_with_user'=>false]);
             add_filter('manage_'.$type.'_posts_columns',[__CLASS__,'columns']);
             add_action('manage_'.$type.'_posts_custom_column',[__CLASS__,'column'],10,2);
         }
@@ -25,7 +25,7 @@ final class HPADS_Post_Types {
     static function menu_section() {
         $screen=get_current_screen();
         $type=$screen?$screen->post_type:'';
-        if (isset(self::KINDS[$type])) { return $type==='hpads_template'?'templates':self::KINDS[$type]; }
+        if (isset(self::KINDS[$type])) { return $type==='hpads_template'?'templates':($type==='hpads_placement'?'playlist':self::KINDS[$type]); }
         $page=sanitize_key($_GET['page'] ?? '');
         foreach (array_keys(HPADS_Admin::PAGES) as $section) { if ($page==='hpads-'.$section) { return $section; } }
         return null;
@@ -90,10 +90,12 @@ final class HPADS_Post_Types {
         $r=self::record($pid);if (!$r || !HPADS_Core::can($r)) { return; }
         if ($column==='hpads_id') { echo (int)$r['id']; }
         if ($column==='hpads_parent') { $p=$r['kind']==='creative'?HPADS_Workflow::owner_record($r):HPADS_Core::get($r['parent_id']);echo esc_html($p['title'] ?? ''); }
+        if ($column==='hpads_state' && $r['kind']==='company') { echo empty($r['data']['active']) && isset($r['data']['active'])?'Inactive':'Active';return; }
         if ($column==='hpads_state') { echo esc_html($r['kind']==='creative'?(HPADS_Placements::is_template($r)?'Template':HPADS_Workflow::summary($r)):(!empty($r['data']['published_version'])?'Published version #'.$r['data']['published_version']:'')); }
     }
     static function upload_panel($type,$which='top') {
         if ($which!=='top') { return; }
+        if ($type==='hpads_playlist') { echo '<a class="button" href="'.esc_url(add_query_arg('post_type','hpads_placement',admin_url('edit.php'))).'">All Ad Placements</a> '; }
         if ($type==='hpads_template' && HPADS_Storage::active()) { HPADS_Placements::template_upload_panel(); }
         if ($type==='hpads_placement') { echo '<label><input type="checkbox" name="show_past" value="1" '.checked(!empty($_GET['show_past']),true,false).'> Include past/inactive placements</label>'; }
     }

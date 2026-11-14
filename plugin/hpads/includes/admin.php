@@ -4,18 +4,19 @@ final class HPADS_Admin {
     const PAGES=['dashboard'=>'Dashboard','company'=>'Venues','location'=>'Locations','device'=>'Devices','advertiser'=>'Advertisers','creative'=>'My Ad Placements','templates'=>'My Ad Templates','playlist'=>'Playlists','users'=>'Users','settings'=>'Settings'];
     static function menu() {
         add_menu_page('HWADS','HWADS','hpads_access','hpads-dashboard',[__CLASS__,'page'],'dashicons-format-video',26);
-        foreach (self::PAGES as $key=>$label) { add_submenu_page('hpads-dashboard',$label,$label,'hpads_access','hpads-'.$key,[__CLASS__,'page']); }
+        foreach (self::PAGES as $key=>$label) { add_submenu_page($key==='creative'?null:'hpads-dashboard',$label,$label,'hpads_access','hpads-'.$key,[__CLASS__,'page']); }
     }
     static function assets($hook) {
         if (strpos($hook,'hpads-')===false && !isset(HPADS_Post_Types::TYPES[$_GET['post_type'] ?? ''])) { return; }
         if (sanitize_key($_GET['page'] ?? '')==='hpads-playlist') { wp_enqueue_media(); }
         if (isset($_GET['edit']) && in_array(sanitize_key($_GET['page'] ?? ''),['hpads-creative','hpads-templates'],true)) { wp_enqueue_style('edit'); wp_enqueue_editor(); }
         if (sanitize_key($_GET['page'] ?? '')==='hpads-device' && !empty($_GET['edit'])) { wp_enqueue_script('hpads-qr-library',plugins_url('assets/vendor/qrcodegen.js',HPADS_FILE),[],HPADS_VERSION,true); wp_enqueue_script('hpads-device-qr',plugins_url('assets/device-qr.js',HPADS_FILE),['hpads-qr-library'],HPADS_VERSION,true); }
+        wp_enqueue_style('edit');
         wp_enqueue_style('hpads',plugins_url('assets/admin.css',HPADS_FILE),[],HPADS_VERSION);
         wp_enqueue_script('hpads',plugins_url('assets/admin.js',HPADS_FILE),['jquery','jquery-ui-sortable'],HPADS_VERSION,true);
         wp_localize_script('hpads','HPADSAdmin',['ajaxUrl'=>admin_url('admin-ajax.php'),'ownerNonce'=>wp_create_nonce('hpads_owner_playlists'),'createNonce'=>wp_create_nonce('hpads_playlist_create'),'transitions'=>HPADS_Placements::TRANSITIONS,'timezone'=>wp_timezone_string()]);
     }
-    static function url($kind,$id=null) { if ($id!==null && HPADS_Storage::active() && in_array($kind,['creative','templates','playlist'],true)) { return HPADS_Native_Editor::url($kind==='templates'?'hpads_template':($kind==='playlist'?'hpads_playlist':'hpads_placement'),$id); } $args=['page'=>'hpads-'.$kind]; if ($id!==null) { $args['edit']=$id; } return add_query_arg($args,admin_url('admin.php')); }
+    static function url($kind,$id=null) { if ($id!==null && HPADS_Storage::active() && in_array($kind,['company','location','device','advertiser','creative','templates','playlist'],true) && (!$id || HPADS_Core::can(HPADS_Core::get($id),true))) { return HPADS_Native_Editor::url($kind==='templates'?'hpads_template':($kind==='creative'?'hpads_placement':HPADS_Storage::type($kind)),$id); } $args=['page'=>'hpads-'.$kind]; if ($id!==null) { $args['edit']=$id; } return add_query_arg($args,admin_url('admin.php')); }
     static function fail($message) { wp_die(esc_html($message),'HWADS',['response'=>400,'back_link'=>true]); }
     static function field($label,$name,$value='',$type='text',$hint='') {
         echo '<p><label><strong>'.esc_html($label).'</strong><br><input class="regular-text" type="'.esc_attr($type).'" name="'.esc_attr($name).'" value="'.esc_attr($value).'"'.($type==='number'?' min="0"':'').'></label>';
@@ -39,6 +40,12 @@ final class HPADS_Admin {
         echo '<form method="post" action="'.esc_url(add_query_arg('action','hpads_save',admin_url('admin-post.php'))).'" enctype="multipart/form-data" class="'.esc_attr($class).'">';
         wp_nonce_field('hpads_save');
         foreach (['action'=>'hpads_save','operation'=>$action,'kind'=>$kind,'id'=>$r['id'] ?? 0,'revision'=>$r['revision'] ?? 0] as $k=>$v) { echo '<input type="hidden" name="'.esc_attr($k).'" value="'.esc_attr($v).'">'; }
+    }
+    static function layout_open($heading) {
+        echo '<div id="poststuff" class="hpads-editor-layout"><div id="post-body" class="metabox-holder columns-2"><div id="post-body-content"><div class="postbox"><div class="postbox-header"><h2 class="hndle">'.esc_html($heading).'</h2></div><div class="inside">';
+    }
+    static function layout_close($button) {
+        echo '</div></div></div><div id="postbox-container-1" class="postbox-container"><div class="postbox"><div class="postbox-header"><h2 class="hndle">Save</h2></div><div class="inside">';submit_button($button,'primary','submit',false);echo '</div></div></div></div><div class="clear"></div></div>';
     }
     static function page() {
         if (!current_user_can('hpads_access')) { self::fail('Access denied.'); }
@@ -170,10 +177,10 @@ final class HPADS_Admin {
             $bound=[]; foreach (HPADS_Core::all('creative') as $entry) { if (($entry['data']['record_type'] ?? '')==='placement' && (int)$entry['data']['rotation_id']===(int)($r['id'] ?? 0)) { $bound[$entry['id']]=HPADS_Placements::card($entry['id']); } }
             if ($r && $write) {
                 $owners=[]; foreach (HPADS_Ads::owners(true) as $key=>$label) { [$ot,$oi]=explode(':',$key); if (HPADS_Placements::can_bind($ot,(int)$oi,$r)) { $owners[$key]=$label; } }
-                echo '<div class="hpads-playlist-import"><h3>Add media or templates</h3>'; self::select('Owner for new uploads','upload_owner',$owners,array_key_first($owners));
-                echo '<div id="hpads-dropzone" tabindex="0" role="button" aria-label="Upload media to create placements">Drop images or videos here, or click to choose files</div><input id="hpads-bulk-media" type="file" multiple hidden accept="image/jpeg,image/png,image/webp,video/mp4,video/webm" data-max-bytes="'.esc_attr(wp_max_upload_size()).'"><p id="hpads-import-status" role="status"></p><label>Existing Ad / Template <select id="hpads-playlist-template"><option value="">Choose an existing ad</option>';
+                echo '<div class="hpads-playlist-import"><h3>Create New Placements</h3>'; self::select('Owner for new uploads','upload_owner',$owners,array_key_first($owners));
+                echo '<div id="hpads-dropzone" tabindex="0" role="button" aria-label="Upload media to create placements">Drop images or videos here, or click to choose files</div><input id="hpads-bulk-media" type="file" multiple hidden accept="image/jpeg,image/png,image/webp,video/mp4,video/webm" data-max-bytes="'.esc_attr(wp_max_upload_size()).'"><p id="hpads-import-status" role="status"></p><label>From Existing Ad / Template <select id="hpads-playlist-template"><option value="">Choose an existing ad</option>';
                 foreach (HPADS_Core::all('creative') as $t) { [$ot,$oi]=HPADS_Workflow::owner_ref($t); if (HPADS_Workflow::can_ad($t) && HPADS_Placements::can_bind($ot,$oi,$r)) { echo '<option value="'.(int)$t['id'].'">'.esc_html($t['title']).'</option>'; } }
-                echo '</select></label> <button type="button" class="button" id="hpads-copy-template">Copy to New Placement</button> <button type="button" class="button" id="hpads-library-media">Choose from Media Library</button><p class="description">Each file or template creates an independent placement immediately. Save Draft to keep card order in this playlist, then Publish to Players to send it live. Removing a card keeps the placement in My Ad Placements.</p></div>';
+                echo '</select></label> <button type="button" class="button" id="hpads-copy-template">Create Placement from Template</button> <button type="button" class="button" id="hpads-library-media">New Placement from Media Library</button><p class="description">Each file or template creates an independent placement immediately. Save Draft to keep card order in this playlist, then Publish to Players to send it live. Removing a card keeps the placement in My Ad Placements.</p></div>';
             }
             echo '<div id="hpads-playlist" data-default-duration="'.(int)(HPADS_Core::get($location_id,'location')['data']['duration'] ?? 10).'" data-bound="'.esc_attr(wp_json_encode($bound)).'" data-items="'.esc_attr(wp_json_encode($d['items'] ?? [])).'" data-media="'.esc_attr(wp_json_encode($choices)).'"></div><input type="hidden" id="hpads-items" name="items" value="'.esc_attr(wp_json_encode($d['items'] ?? [])).'"><button type="button" class="button" id="hpads-add-item">Add placement</button>';
             if ($r) { echo '<p class="description">Draft placements can be arranged here. Approvals follow Settings; automatic approval is the default. Templates must first be copied into a placement for this playlist.</p>'; }
@@ -203,10 +210,11 @@ final class HPADS_Admin {
         echo '<p>Manage teams in Users, advertiser location eligibility in Advertisers, and ad submissions in Ads.</p>';
         if (!HPADS_Workflow::global_admin()) { echo '<p>Global HWADS Admin access is required to change settings.</p>'; return; }
         self::begin('settings',null,'settings');
+        self::layout_open('Settings');
         self::field('Heartbeat / polling interval (seconds)','heartbeat',HPADS_Core::interval(),'number','60–3600 seconds. Default 300.');
         self::select('Ad approvals','approval_mode',['automatic'=>'Automatic approval (current default)','manual'=>'Account manager, then venue approval'],get_option('hpads_settings',[])['approval_mode'] ?? 'automatic');
         echo '<p>Automatic approval includes existing placements and all locations of connected venues. Team access and venue connections still apply. Changing this setting never publishes a playlist.</p>';
-        submit_button('Save Settings'); echo '</form>';
+        self::layout_close('Save Settings');echo '</form>';
         echo '<h2>Upload environment</h2><p>PHP upload_max_filesize: <code>'.esc_html(ini_get('upload_max_filesize')).'</code> · post_max_size: <code>'.esc_html(ini_get('post_max_size')).'</code> · WordPress effective maximum: <strong>'.esc_html(size_format(wp_max_upload_size())).'</strong></p><p>These limits are configured in hosting PHP settings, not by HWADS.</p>';
     }
     static function redirect($kind,$id=null) { wp_safe_redirect(add_query_arg('saved',1,self::url($kind,$id))); exit; }

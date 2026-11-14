@@ -60,6 +60,10 @@ final class HPADS_Core {
         add_action('wp_ajax_hpads_playlist_create', ['HPADS_Placements','ajax_create']);
         add_action('wp_ajax_hpads_owner_playlists', ['HPADS_Placements','ajax_owner_playlists']);
         add_action('admin_menu', ['HPADS_Admin','menu']);
+        add_action('admin_menu',['HPADS_Admin_Access','menus'],999);
+        add_action('admin_init',['HPADS_Admin_Access','guard'],20);
+        add_action('admin_bar_menu',['HPADS_Admin_Access','toolbar'],999);
+        add_filter('login_redirect',['HPADS_Admin_Access','login'],10,3);
         add_action('admin_enqueue_scripts', ['HPADS_Admin','assets']);
         add_action('admin_post_hpads_device_settings', ['HPADS_Device_QR','route']);
         add_action('admin_post_nopriv_hpads_device_settings', ['HPADS_Device_QR','route']);

@@ -135,6 +135,7 @@
             const option=document.createElement('option'); option.value=''; option.textContent='No placements available for this playlist'; select.append(option); select.disabled=true;
         }
         select.value = item.creative_id || select.value;
+        const placementTitle=input('text',bound[item.creative_id] && bound[item.creative_id].title || '', 'Placement name');placementTitle.className='placement-title';
         const duration = input('number', item.duration, 'Image duration override in seconds'); duration.className = 'duration'; duration.min = 1; duration.max = 3600; duration.placeholder = String(defaultDuration);
         const inherited=document.createElement('span'); inherited.className='hpads-duration-inherited';
         function durationState(value){duration.dataset.inherited=value == null || value==='';duration.value=duration.dataset.inherited==='true'?defaultDuration:value;inherited.textContent=duration.dataset.inherited==='true'?'Inherited default: '+defaultDuration+' seconds':'Placement override';}
@@ -144,7 +145,7 @@
         const start = input('datetime-local', item.start, 'Start ('+(window.HPADSAdmin && HPADSAdmin.timezone || 'site timezone')+')'); start.className = 'start';
         const end = input('datetime-local', item.end, 'End ('+(window.HPADSAdmin && HPADSAdmin.timezone || 'site timezone')+')'); end.className = 'end';
         function labeled(text, control) { const label = document.createElement('label'); const span = document.createElement('span'); span.textContent = text; label.append(span, control); return label; }
-        el.append(labeled('Placement', select), labeled('Seconds', duration), inherited, activeLabel, labeled('Start', start), labeled('End', end));
+        el.append(labeled('Placement', select), labeled('Placement name',placementTitle), labeled('Seconds', duration), inherited, activeLabel, labeled('Start', start), labeled('End', end));
         el.append(button('↑', 'Move item up', () => { if (el.previousElementSibling) editor.insertBefore(el, el.previousElementSibling); dirty = true; }));
         el.append(button('↓', 'Move item down', () => { if (el.nextElementSibling) editor.insertBefore(el.nextElementSibling, el); dirty = true; }));
         el.append(button('Remove', 'Remove item', () => { el.remove(); dirty = true; }));
@@ -157,6 +158,7 @@
         [start,end].forEach(control=>{const calendar=button('Calendar','Choose '+(control===start?'start':'end')+' date',()=>{try{control.showPicker();}catch{control.focus();}});control.after(calendar);});
         function entryValues() {
             const data=bound[select.value];
+            placementTitle.value=data && data.title || '';placementTitle.readOnly=!!data && data.editable===false;
             el.dataset.revision=data?data.revision:'';external.value=data && data.link_url || '';qr.checked=!!(data && data.qr_enabled);tin.value=data && data.transition_in || 'none';tout.value=data && data.transition_out || 'none';templateEdit.hidden=!(data && data.template_edit);if(data && data.template_edit)templateEdit.href=data.template_edit;
             preview.replaceChildren(); if(data && data.preview) { const media=document.createElement(data.video?'video':'img');media.src=data.preview;if(data.video){media.controls=true;media.preload='none';}else{media.alt=data.title || '';}preview.append(media); }
             edit.hidden=!data || !data.edit; if(data && data.edit) edit.href=data.edit;duplicate.disabled=!data;
@@ -220,7 +222,7 @@
     form.addEventListener('submit', event => {
         if(event.defaultPrevented)return;
         hidden.value = JSON.stringify(Array.from(editor.children).map(el => ({
-            creative_id: +el.querySelector('.creative').value,
+            creative_id: +el.querySelector('.creative').value,title:el.querySelector('.placement-title').value,
             duration: el.querySelector('.duration').dataset.inherited==='true'?'':el.querySelector('.duration').value,
             active: el.querySelector('.active').checked,
             start: el.querySelector('.start').value,

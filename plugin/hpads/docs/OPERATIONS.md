@@ -1,7 +1,11 @@
-# HWADS 0.7.0 operations
+# HWADS 0.7.2 operations
 
-Fresh activation enables native post storage directly. Create a venue/location, then templates and playlists. Templates and placements use native WordPress post editors; placements show a large preview and optional web content. Playlists have a title/bucket/sidebar without web content. Save Draft does not publish to players; Save & Publish to Players does.
+Configuration records use native save controls: Save Venue, Save Location, Save Device and Save Advertiser. They are usable as soon as saved and do not require approvals. Venue active/inactive is administrative status. Device enablement and published playlist assignments control player operation.
 
-This checkpoint does not implement Pi synchronization. The device API exposes authenticated immutable manifests and media URLs, checksums, UTC schedules and effective duration_seconds. A Pi sync client must verify a complete download before switching and retain the last good offline version. The current shell player expects local file/type/duration JSON, so it still needs that adapter.
+Ad content saves as drafts. Publish a playlist using the standard Publish button, then Update after publication; this freezes the complete manifest/media/content version. Save Draft is shown only before publication. Refresh the embedded preview after saving to inspect the saved draft.
 
-Published landing pages read frozen snapshots, while native draft edits stay private. External links are direct; tracking and QR positioning are not yet implemented. Divi is not bundled or verified in this build. Per-location memberships and the rest of the UI overhaul remain on a separate unfinished branch.
+The device key appears once after native device creation/rotation. Settings QR links require login and device-management authorization, and never contain the device API key. Existing device keys are preserved on ordinary saves.
+
+A Pi client still needs to download and verify complete manifests/media before atomic switching and convert duration_seconds to the local player's duration field. Keep the last good version for offline playback. This ZIP does not install a Pi client.
+
+Tracking, QR positioning, Divi-specific rendering and per-location memberships remain pending. Do not treat these as implemented merely because they appear in the roadmap.

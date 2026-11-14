@@ -9,8 +9,10 @@ PASS: native new playlist adopts its own WordPress post
 PASS: native placement saves destination and media
 PASS: independent transition choices saved
 PASS: native playlist saves bucket order
+PASS: placement name is editable directly from its playlist card
 PASS: native Save Draft does not publish players
-PASS: native Save and Publish action creates immutable version
+PASS: standard Publish preserves native published state
+PASS: standard Publish action creates immutable version
 PASS: published item has resolved image duration
 PASS: published landing snapshots native content
 PASS: native draft edits do not leak into published landing
@@ -20,5 +22,24 @@ PASS: ad editor uses native Visual/Text editor
 PASS: playlist has a native bucket editor without web content
 PASS: foreign advertiser cannot edit native template
 PASS: forged native save rejected
-NATIVE TOTAL: 22 checks passed
+PASS: native Save Venue immediately makes active venue available without approval
+PASS: venue inactive status is explicit and saved
+PASS: native location saves under venue without approval
+PASS: native device saves configuration and unique key hash
+PASS: native device creation preserves one-time key display
+PASS: native device update keeps key unless rotated
+PASS: native device key rotation works
+PASS: native advertiser saves venue connection
+PASS: configuration editors omit unrelated content editor
+PASS: normal advertiser is restricted to HWADS navigation
+PASS: direct non-HWADS admin access denied
+PASS: own WordPress profile remains available
+PASS: native post route remains available subject to record capabilities
+PASS: external account sidebar keeps HWADS only
+PASS: global owner retains ordinary WordPress menus
+PASS: authorized manager can change template owner
+PASS: authorized manager changes placement owner while keeping valid destination
+PASS: duplicated template owner can change without changing original
+PASS: external advertiser cannot transfer ad into another owner
+NATIVE TOTAL: 43 checks passed
 

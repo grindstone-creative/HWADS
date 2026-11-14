@@ -45,7 +45,7 @@ final class HPADS_Storage {
             wp_cache_delete($pid,'post_meta');
         } elseif (!add_post_meta($pid,'_hpads_record',wp_slash($json),true)) { wp_delete_post($pid,true);return HPADS_Core::error('Could not save record.'); }
         $prior=HPADS_Native_Editor::$writing;HPADS_Native_Editor::$writing=true;
-        try { $result=wp_update_post(wp_slash(['ID'=>$pid,'post_title'=>$title,'post_type'=>self::type($kind,$data),'post_parent'=>$parent?self::post_id($parent):0,'post_content'=>$data['description'] ?? '']),true); } finally { HPADS_Native_Editor::$writing=$prior; }
+        try { $result=wp_update_post(wp_slash(['ID'=>$pid,'post_title'=>$title,'post_type'=>self::type($kind,$data),'post_parent'=>$parent?self::post_id($parent):0,'post_status'=>in_array($kind,['company','location','device','advertiser'],true)?($kind==='company' && isset($data['active']) && !$data['active']?'draft':'publish'):get_post_status($pid),'post_content'=>$data['description'] ?? '']),true); } finally { HPADS_Native_Editor::$writing=$prior; }
         if (is_wp_error($result)) {
             if (!empty($meta)) { $wpdb->update($wpdb->postmeta,['meta_value'=>$meta['meta_value']],['meta_id'=>$meta['meta_id'],'meta_value'=>$json]);wp_cache_delete($pid,'post_meta'); }
             else { wp_delete_post($pid,true); }

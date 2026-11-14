@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.7.2 — 2026-11-14
+
+- Unified template/placement preview-first editing; moved placement navigation under Playlists with an All Ad Placements history link. Added editable placement names to playlist cards and clearer inline creation actions.
+
+- All seven entity types now use actual native WordPress editors, including devices, venues, locations and advertisers. Users/settings use the same details/save-sidebar presentation.
+- Venue save is immediately usable, with Save Venue and an active/inactive flag; no approval or separate publication step is required. Added native device key generation, display/rotation and status/QR support.
+- Placement landing-page editor is always visible; removed the hidden-editor toggle that caused toolbar sizing issues.
+- Playlists use standard Save Draft/Publish, then Update. Removed duplicate sidebar preview/custom publication buttons while keeping the embedded player.
+- Authorized HWADS managers can change template/placement ownership, including duplicates, subject to owner and playlist access checks.
+- Restricted ordinary advertiser/venue admin menus and direct page access to HWADS and own profile; global staff/WordPress admins retain normal navigation.
+- Recorded WordPress-native UI as the project standard in AGENTS.md.
+
+## 0.7.1 — 2026-11-14
+
+- Embedded the private saved-draft playlist player above the placement bucket, with Refresh Preview.
+- Added Preview Ad Template to the native save sidebar. It opens the last saved template privately, without needing a placement or playlist.
+
 ## 0.7.0 — 2026-11-14 — native editor testing checkpoint
 
 - Ad Templates, Ad Placements and Playlists now open in their actual native WordPress post editors, including Add New. Native content and details save back to the canonical records without duplicate posts.

@@ -61,5 +61,13 @@
 
 .hwads-placement-preview { margin:18px 0;padding:16px;background:#fff;border:1px solid #c3c4c7;text-align:center; }
 .hwads-placement-preview #hwads-native-preview img,.hwads-placement-preview #hwads-native-preview video { display:block;margin:auto;max-width:100%;max-height:650px;object-fit:contain; }
-.post-type-hpads_placement #postdivrich { display:none; }
+.post-type-hpads_placement #postdivrich { display:block; }
 .post-type-hpads_placement.hwads-show-web-editor #postdivrich { display:block; }
+
+#hwads-inline-playlist { display:block;width:100%;height:480px;border:0;background:#111; }
+@media(max-width:600px){#hwads-inline-playlist{height:350px;}}
+
+.hpads-editor-layout .postbox .hndle { margin:0;padding:12px;font-size:14px; }
+.hpads-editor-layout #post-body-content { min-width:0; }
+.hpads-editor-layout .inside { overflow-wrap:anywhere; }
+@media(max-width:850px){.hpads-editor-layout #post-body.columns-2{margin-right:0}.hpads-editor-layout #post-body.columns-2 #postbox-container-1{float:none;margin:0;width:100%}.hpads-editor-layout #post-body-content{float:none;width:100%}}

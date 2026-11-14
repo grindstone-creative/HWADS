@@ -2,7 +2,7 @@ from pathlib import Path
 import zipfile
 root=Path(__file__).resolve().parents[1]
 source=root/'plugin/hpads'
-target=root/'dist/hwads-0.7.0.zip'
+target=root/'dist/hwads-0.7.2.zip'
 target.parent.mkdir(parents=True,exist_ok=True)
 with zipfile.ZipFile(target,'w',zipfile.ZIP_DEFLATED) as archive:
     for path in sorted(source.rglob('*')):

@@ -158,7 +158,7 @@ final class HPADS_Placements {
         $ref=explode(':',sanitize_text_field($in['owner'] ?? ''));
         if (count($ref)!==2 || !in_array($ref[0],['company','advertiser'],true) || !HPADS_Core::get(absint($ref[1]),$ref[0]) || !self::author_owner($ref[0],absint($ref[1]))) { return HPADS_Core::error('Select an owner available for a property you manage.',403); }
         $ref=[$ref[0],absint($ref[1])];
-        if (($r||$source) && $ref!==HPADS_Workflow::owner_ref($r?:$source)) { return HPADS_Core::error('The owner cannot be changed through copying or editing.'); }
+        if (($r||$source) && $ref!==HPADS_Workflow::owner_ref($r?:$source) && !(HPADS_Workflow::production() || self::manager())) { return HPADS_Core::error('Owner changes require an authorized HWADS manager.',403); }
         [$type,$oid]=$ref; $rotation=null;
         if ($mode==='placement') {
             $rotation=HPADS_Core::get(absint($in['rotation_id'] ?? 0),'playlist');
@@ -199,7 +199,7 @@ final class HPADS_Placements {
             $seen[$id]=true;
             if ($purpose==='house' && HPADS_Workflow::owner_ref($entry)[0]!=='company') { $rollback();return HPADS_Core::error('Remove advertiser placements before changing to House / Placeholder.'); }
             if (isset($item['revision'])) {
-                $input=array_merge($entry['data'],$item,['id'=>$id,'revision'=>(int)$item['revision'],'title'=>$entry['title'],'record_type'=>'placement','owner'=>implode(':',HPADS_Workflow::owner_ref($entry)),'rotation_id'=>$r['id'],'_local_dates'=>1]);
+                $input=array_merge($entry['data'],$item,['id'=>$id,'revision'=>(int)$item['revision'],'title'=>sanitize_text_field($item['title'] ?? $entry['title']),'record_type'=>'placement','owner'=>implode(':',HPADS_Workflow::owner_ref($entry)),'rotation_id'=>$r['id'],'_local_dates'=>1]);
                 $saved=self::save($input);if (is_wp_error($saved)) { $rollback();return $saved; }
             }
         }

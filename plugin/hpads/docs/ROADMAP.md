@@ -12,3 +12,9 @@ This checkpoint includes the CPT storage conversion, native list screens, rename
 Add QR anchors: top-left, top-center, top-right, middle-left, center, middle-right, bottom-left, bottom-center, bottom-right. Add Custom X/Y position, preferably normalized percentages within the ad canvas, plus size and safe edge margin. Store these as placement fields and copy defaults from templates; publish them in the immutable manifest for web preview and eventual player rendering. QR enable/disable remains independent.
 
 Investigate Divi module Advanced Position/absolute-location and offset controls as the web editor UI. WordPress core has no built-in signage QR-position field. Do not couple player positioning to Divi-generated markup or responsive CSS; keep renderer-neutral placement metadata. This is explicitly deferred and is not part of the native-editor checkpoint.
+
+## Metrics revision attribution (required when tracking is implemented)
+
+Placements retain durable identities, while material creative/link/QR/landing-content changes produce new published revisions. Store events against placement ID + published revision/manifest version + channel + device/location + event time. Never relabel historical events as current content. Reports should provide lifetime totals and per-revision breakdowns.
+
+Player events must identify what was actually displayed, including cached/offline versions. Tracked click/QR references must map immutably to the published revision and destination so an old QR/link does not credit replacement artwork. Draft saves must not change live attribution. Tracking/event collection itself is not implemented in this release.

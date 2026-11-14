@@ -90,6 +90,7 @@ final class HPADS_Teams {
         if (!self::can_manage() || ($id && (!$u || !self::can_edit($u)))) { HPADS_Admin::fail('This account cannot be edited here.'); }
         HPADS_Admin::begin('users',null,'team_user');
         echo '<input type="hidden" name="user_id" value="'.(int)$id.'">';
+        HPADS_Admin::layout_open('User Details and Access');
         HPADS_Admin::field('Display name','display_name',$u?$u->display_name:'');
         if (!$u) {
             HPADS_Admin::field('Username','user_login'); HPADS_Admin::field('Email','user_email','','email');
@@ -100,6 +101,6 @@ final class HPADS_Teams {
         HPADS_Admin::multi('Venue memberships','companies',HPADS_Admin::choices('company'),$u?HPADS_Core::ids(get_user_meta($u->ID,'hpads_companies',true)):[]);
         HPADS_Admin::multi('Advertiser memberships','advertisers',HPADS_Admin::choices('advertiser'),$u?HPADS_Core::ids(get_user_meta($u->ID,'hpads_advertisers',true)):[]);
         echo '<p>Venue roles use venue memberships; advertiser roles use advertiser memberships. Global HWADS roles do not need memberships.</p>';
-        submit_button('Save User'); echo '</form>';
+        HPADS_Admin::layout_close('Save User');echo '</form>';
     }
 }

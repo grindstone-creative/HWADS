@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.0 — 2026-11-14
+
+- Added playlist/placement shortcodes and standalone public iframe embeds, with copy-ready codes and IDs in their editors. Templates and unpublished drafts are excluded.
+- Embeds read immutable published snapshots, honor schedules, play videos in full and refresh publication metadata every five minutes. No tracking is added in this release.
+
+- Moved playlist Location and Purpose into a native Playlist Settings sidebar box. Preview and placement cards remain in the main editor, with the same save validation and field names.
+
 ## 0.7.2 — 2026-11-14
 
 - Unified template/placement preview-first editing; moved placement navigation under Playlists with an All Ad Placements history link. Added editable placement names to playlist cards and clearer inline creation actions.

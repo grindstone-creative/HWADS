@@ -1,0 +1,12 @@
+(()=>{
+ const stage=document.getElementById('hwads-display');let data=JSON.parse(document.getElementById('hwads-embed-data').textContent),index=-1,timer,run=0,etag='';
+ const eligible=()=>{const now=Date.now();return data.items.filter(x=>(!x.start || Date.parse(x.start)<=now)&&(!x.end || Date.parse(x.end)>now));};
+ function animate(el,name,out){if(!el||name==='none'||!el.animate)return Promise.resolve();let a={opacity:0},b={opacity:1};if(name.startsWith('slide-')){const d=name.slice(6),axis=['left','right'].includes(d)?'X':'Y',sign=['left','up'].includes(d)?-1:1;a={transform:`translate${axis}(${sign*100}%)`};b={transform:`translate${axis}(0)`};}else if(name==='zoom'){a={opacity:0,transform:'scale(.8)'};b={opacity:1,transform:'scale(1)'};}return el.animate(out?[b,a]:[a,b],{duration:500,easing:'ease-in-out',fill:'forwards'}).finished.catch(()=>{});}
+ async function show(){const token=++run;clearTimeout(timer);const list=eligible();if(!list.length){stage.replaceChildren();timer=setTimeout(show,30000);return;}const old=stage.firstElementChild;if(old){const video=old.querySelector('video');if(video)video.pause();await animate(old,old.dataset.exit||'none',true);}if(token!==run)return;index=(index+1)%list.length;const item=list[index],link=document.createElement('a'),media=document.createElement(item.video?'video':'img');link.href=item.href;link.target='_blank';link.rel='noopener noreferrer';link.dataset.exit=item.exit;media.src=item.url;
+  if(item.video){media.muted=true;media.playsInline=true;media.controls=true;media.preload='metadata';media.onended=()=>{if(token===run)show();};}else media.alt=item.title;
+  media.onerror=()=>{if(token===run)timer=setTimeout(show,3000);};link.append(media);stage.replaceChildren(link);await animate(link,item.entrance,false);if(token!==run)return;if(item.video)media.play().catch(()=>{});else timer=setTimeout(show,Math.max(1,Number(item.seconds)||10)*1000);
+ }
+ // Metadata refresh is one small same-origin request per five minutes. Media uses browser caching.
+ setInterval(async()=>{if(document.visibilityState==='hidden')return;try{const url=new URL(location.href);url.searchParams.set('format','json');const response=await fetch(url,{credentials:'omit',cache:'no-cache',headers:etag?{'If-None-Match':etag}:{}});if(response.status===304)return;if(response.status===404){data.items=[];index=-1;show();return;}if(!response.ok)return;const next=await response.json();etag=response.headers.get('ETag')||'';if(JSON.stringify(next)!==JSON.stringify(data)){data=next;index=-1;show();}}catch{}},300000);
+ show();
+})();

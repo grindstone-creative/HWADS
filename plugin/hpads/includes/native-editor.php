@@ -35,7 +35,14 @@ final class HPADS_Native_Editor {
     static function boxes($type) {
         if (!self::supports($type)) { return; }
         global $wp_meta_boxes;if (isset($wp_meta_boxes[$type]['side']['core']['submitdiv'])) { $wp_meta_boxes[$type]['side']['core']['submitdiv']['title']='Save'; }
+        if ($type==='hpads_playlist') { add_meta_box('hwads-playlist-settings','Playlist Settings',[__CLASS__,'playlist_settings'],$type,'side','default'); }
+        if (in_array($type,['hpads_playlist','hpads_placement'],true)) { add_meta_box('hwads-embed','Shortcode & Embed Code',['HPADS_Embeds','box'],$type,'side','low'); }
         add_meta_box('hwads-details',$type==='hpads_playlist'?'Playlist Details & Placements':(isset(self::CONFIG[$type])?HPADS_Admin::PAGES[self::CONFIG[$type]].' Details':'Ad Details'),[__CLASS__,'details'],$type,'normal','high');
+    }
+    static function playlist_settings($post) {
+        $r=self::record($post->ID);$d=$r['data'] ?? [];
+        HPADS_Admin::select('Location','parent_id',HPADS_Admin::choices('location'),$r['parent_id'] ?? 0);
+        HPADS_Admin::select('Purpose','purpose',['primary'=>'Primary','house'=>'House / placeholder'],$d['purpose'] ?? (HPADS_Workflow::venue_admin()&&!HPADS_Core::staff()?'house':'primary'));
     }
     static function context($post) {
         $r=self::record($post->ID);$source=null;
@@ -66,7 +73,7 @@ final class HPADS_Native_Editor {
             ob_start();HPADS_Admin::editor('playlist',(int)($r['id'] ?? 0));$html=ob_get_clean();
             if (preg_match('~<fieldset[^>]*>(.*?)</fieldset></form>~s',$html,$m)) {
                 $body=preg_replace('~<p><label><strong>Name</strong>.*?</p>~s','',$m[1],1);
-                $body=preg_replace('~<p class="submit">.*?</p>~s','',$body);$body=preg_replace('~<p><a[^>]*href="[^"]*hpads_playlist_preview[^"]*"[^>]*>Preview Playlist</a></p>~','',$body);
+                $body=preg_replace('~<p><label><strong>(?:Location|Purpose)</strong>.*?</p>~s','',$body);$body=preg_replace('~<p class="submit">.*?</p>~s','',$body);$body=preg_replace('~<p><a[^>]*href="[^"]*hpads_playlist_preview[^"]*"[^>]*>Preview Playlist</a></p>~','',$body);
                 echo $body;
             }
             echo '<p class="description">This playlist contains placement cards only. Edit web content on the ad template or placement. Save Draft stores the bucket; Publish to Players is separate.</p>';return;

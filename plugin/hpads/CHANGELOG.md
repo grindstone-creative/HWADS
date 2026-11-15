@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.2 — 2026-11-14
+
+- Moved playlist card Remove directly next to Duplicate. Removal behavior is unchanged; Update publishes the revised playlist.
+
 ## 0.8.1 — 2026-11-14
 
 - Dashboard defaults to My Ad Placements; each user can save their own list preference. Devices are optional. Preferences use a WordPress nonce and retain scoped access.

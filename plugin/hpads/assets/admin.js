@@ -148,7 +148,7 @@
         el.append(labeled('Placement', select), labeled('Placement name',placementTitle), labeled('Seconds', duration), inherited, activeLabel, labeled('Start', start), labeled('End', end));
         el.append(button('↑', 'Move item up', () => { if (el.previousElementSibling) editor.insertBefore(el, el.previousElementSibling); dirty = true; }));
         el.append(button('↓', 'Move item down', () => { if (el.nextElementSibling) editor.insertBefore(el.nextElementSibling, el); dirty = true; }));
-        el.append(button('Remove', 'Remove item', () => { el.remove(); dirty = true; }));
+        const remove=button('Remove', 'Remove item', () => { el.remove(); dirty = true; });
         const external=input('url','','External URL (optional)');external.className='link-url';
         const qr=input('checkbox',false,'Show QR Code');qr.className='qr-enabled';const qrLabel=document.createElement('label');qrLabel.append(qr,' Show QR Code');
         function transitionField(cls,label){const select=document.createElement('select');select.className=cls;Object.entries(window.HPADSAdmin && HPADSAdmin.transitions || {none:'None',fade:'Fade','slide-left':'Slide left'}).forEach(([value,text])=>select.add(new Option(text,value)));el.append(labeled(label,select));return select;}
@@ -162,7 +162,7 @@
             el.dataset.revision=data?data.revision:'';external.value=data && data.link_url || '';qr.checked=!!(data && data.qr_enabled);tin.value=data && data.transition_in || 'none';tout.value=data && data.transition_out || 'none';templateEdit.hidden=!(data && data.template_edit);if(data && data.template_edit)templateEdit.href=data.template_edit;
             preview.replaceChildren(); if(data && data.preview) { const media=document.createElement(data.video?'video':'img');media.src=data.preview;if(data.video){media.controls=true;media.preload='none';}else{media.alt=data.title || '';}preview.append(media); }
             edit.hidden=!data || !data.edit; if(data && data.edit) edit.href=data.edit;duplicate.disabled=!data;
-            el.append(edit,duplicate);
+            el.append(edit,duplicate,remove);
             [duration,start,end].forEach(control=>{control.readOnly=false;});
             if(data) { durationState(data.duration);start.value=data.start || '';end.value=data.end || '';duration.title='Clear to restore the inherited default.';start.title=end.title='Timezone: '+(window.HPADSAdmin && HPADSAdmin.timezone || 'WordPress site timezone'); }
         }

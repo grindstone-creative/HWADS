@@ -18,7 +18,7 @@ def stop_players(root):
             stat = (p / 'stat').read_text().rsplit(')', 1)[1].split()
             pid = int(p.name)
             parents[pid] = int(stat[1])
-            scripts = {str(root / 'scripts/start-player.sh'), str(root / 'scripts/hwads_player.py')}
+            scripts = {str(root / 'scripts/start-player.sh'), str(root / 'scripts/hwads_player.py'), str(root / 'scripts/hwads_browser.py'), str(root / 'scripts/hwads_launch.py')}
             if pid != os.getpid() and any(a in scripts for a in argv[:3]):
                 targets.append(pid)
         except (OSError, ValueError, UnicodeError):
@@ -39,6 +39,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('command', choices=['disable', 'enable', 'status'])
     p.add_argument('--root', default='~/hpads')
+    p.add_argument('--engine', choices=['browser','mpv'])
     args = p.parse_args()
     root = Path(args.root).expanduser().resolve()
     (root / 'config').mkdir(parents=True, exist_ok=True)
@@ -48,10 +49,17 @@ def main():
         stop_players(root)
         print('Playback disabled. Media sync can continue. Use enable to resume.')
     elif args.command == 'enable':
+        if args.engine:
+            flag.touch(mode=0o600)
+            stop_players(root)
+            from hwads_sync import atomic_json
+            atomic_json(root / 'config/player-engine.json', {'engine':args.engine})
+            import time
+            time.sleep(1)
         flag.unlink(missing_ok=True)
         (root / 'logs').mkdir(exist_ok=True)
         with (root / 'logs/launcher.log').open('ab') as log:
-            subprocess.Popen([sys.executable, str(root / 'scripts/hwads_player.py'), '--root', str(root)], stdout=log, stderr=log, start_new_session=True)
+            subprocess.Popen([sys.executable, str(root / 'scripts/hwads_launch.py'), '--root', str(root)], stdout=log, stderr=log, start_new_session=True)
         print('Playback enabled. See logs/player.log if the display does not start.')
     else:
         print('Playback disabled' if flag.exists() else 'Playback enabled (check player-state.json for actual activity)')

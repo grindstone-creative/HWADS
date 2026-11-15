@@ -9,13 +9,14 @@ from logging.handlers import RotatingFileHandler
 import os
 from pathlib import Path
 import random
+import shutil
 import re
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
 
-VERSION = '0.1.0'
+VERSION = '0.2.0'
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
@@ -85,7 +86,7 @@ class Sync:
         except (OSError, ValueError):
             self.state = {}
         self.interval = max(60, min(3600, int(self.state.get('interval', 300))))
-        self.etag = self.state.get('etag', '') if self.active_path.exists() else ''
+        self.etag = self.state.get('etag', '') if self.active_path.exists() and self.state.get('client_version') == VERSION else ''
 
     def headers(self):
         return {'Authorization': 'Bearer ' + self.config['device_key'], 'Accept': 'application/json', 'User-Agent': 'HWADS-Sync/' + VERSION}
@@ -138,6 +139,8 @@ class Sync:
             headers['If-None-Match'] = self.etag
         payload, etag = request(self.api + '/playlist', headers)
         if payload is None:
+            self.state['synced_at'] = time.time()
+            atomic_json(self.state_path, self.state)
             return False
         if payload.get('schema') != 1 or payload.get('device_id') != self.config['device_id']:
             raise ValueError('Unexpected manifest/device')
@@ -161,15 +164,20 @@ class Sync:
                         raise ValueError('Invalid image duration')
                     rows.append({'file': self.download(item), 'type': 'video' if video else 'image', 'duration': None if video else duration,
                                  'active': True, 'order': len(rows), 'start_utc': item.get('start_utc'), 'end_utc': item.get('end_utc'),
+                                 'transition_in': item.get('transition_in', 'none'), 'transition_out': item.get('transition_out', 'none'),
+                                 'qr_enabled': bool(item.get('qr_enabled')) and bool(item.get('placement_id')),
+                                 'qr_url': self.config['site_url'] + '/?' + urllib.parse.urlencode({'hpads_ad':item.get('placement_id'), 'hwads_source':'qr'}) if item.get('placement_id') else '',
                                  'placement_id': item.get('placement_id'), 'revision': item.get('placement_revision'), 'version_id': manifest['version_id']})
             slots[slot] = rows
         # Single atomic activation: all media already verified. Existing files retained for offline playback.
         active = {'schema': 1, 'device_id': payload['device_id'], 'orientation': orientation, 'house_in_rotation': bool(payload.get('house_in_rotation')),
                   'versions': versions, **slots}
+        if self.active_path.exists():
+            atomic_json(self.root / 'config/previous-playlist.json', json.loads(self.active_path.read_text()))
         atomic_json(self.active_path, active)
         self.interval = max(60, min(3600, int(payload.get('heartbeat_seconds', 300))))
         self.etag = etag
-        self.state = {'etag': etag, 'versions': versions, 'interval': self.interval, 'synced_at': time.time()}
+        self.state = {**self.state, 'client_version': VERSION, 'etag': etag, 'versions': versions, 'interval': self.interval, 'synced_at': time.time()}
         atomic_json(self.state_path, self.state)
         logging.info('Activated complete playlist version(s): %s', versions)
         return True
@@ -181,8 +189,40 @@ class Sync:
             player = {}
         playing = player.get('state') == 'playing' and time.time() - player.get('updated_at', 0) < 45
         body = {'active_version': player.get('version_id', 0) if playing else 0, 'player_version': 'HWADS-Pi/' + VERSION,
-                'state': 'playing' if playing else ('error' if error else 'idle'), 'error': 'Sync failed; keeping last complete playlist' if error else ''}
-        request(self.api + '/heartbeat', {**self.headers(), 'Content-Type': 'application/json'}, json.dumps(body).encode())
+                'state': 'playing' if playing else ('error' if error else 'idle'), 'error': 'Sync failed; keeping last complete playlist' if error else str(player.get('error') or '')[:160],
+                'placement_id': player.get('placement_id', 0) if playing else 0, 'engine': player.get('engine', 'mpv'),
+                'last_sync_utc': int(self.state.get('synced_at', 0)), 'disk_free_bytes': shutil.disk_usage(self.root).free, 'sync_version': VERSION, 'purge_command_id':self.state.get('purge_command_id',''), 'purge_files':self.state.get('purge_files',0), 'purge_bytes':self.state.get('purge_bytes',0)}
+        response, _ = request(self.api + '/heartbeat', {**self.headers(), 'Content-Type': 'application/json'}, json.dumps(body).encode())
+        for command in response.get('commands', []):
+            if command.get('type') == 'purge_unused_media' and command.get('id') != self.state.get('purge_command_id'):
+                files, size = self.purge()
+                self.state.update(purge_command_id=str(command['id']),purge_files=files,purge_bytes=size)
+                atomic_json(self.state_path,self.state)
+
+    def purge(self):
+        protected = set()
+        # If either playlist cannot be parsed, do not guess what is safe to delete.
+        for path in (self.active_path, self.root / 'config/previous-playlist.json'):
+            if not path.exists():
+                continue
+            data = json.loads(path.read_text())
+            rows = data if isinstance(data,list) else data.get('primary',[]) + data.get('house',[])
+            protected.update(row['file'] for row in rows)
+        try:
+            player = json.loads((self.root / 'config/player-state.json').read_text())
+            protected.update(player.get('media_files',[]))
+        except (OSError,ValueError):
+            pass
+        count, size = 0, 0
+        for path in self.media.iterdir():
+            if path.is_symlink() or not path.is_file() or path.name in protected or path.suffix == '.part':
+                continue
+            stat = path.stat()
+            if time.time()-stat.st_mtime < 86400:
+                continue
+            path.unlink();count+=1;size+=stat.st_size
+        logging.info('Purged %s unused media files (%s bytes)',count,size)
+        return count,size
 
     def run(self, once=False):
         while True:
@@ -225,7 +265,7 @@ def main():
             return Sync(load_config(args.config), root).run(args.once)
         except Exception as error:
             logging.error('Configuration failure (%s)', type(error).__name__)
-            print('Check device.json, HTTPS URL, device ID/key and file permissions. See logs/sync.log.')
+            print('Configuration error: ' + str(error))
             return 1
 
 if __name__ == '__main__':

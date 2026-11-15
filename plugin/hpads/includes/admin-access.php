@@ -15,7 +15,7 @@ final class HPADS_Admin_Access {
         if ($page==='admin.php') { $slug=$query['page'] ?? '';return is_string($slug) && strpos($slug,'hpads-')===0 && isset(HPADS_Admin::PAGES[substr($slug,6)]); }
         if (in_array($page,['edit.php','post-new.php'],true)) { $type=$query['post_type'] ?? '';return is_string($type) && isset(HPADS_Post_Types::TYPES[$type]); }
         if ($page==='post.php') { $p=get_post(absint($query['post'] ?? $query['post_ID'] ?? 0));return $p && isset(HPADS_Post_Types::TYPES[$p->post_type]); }
-        if ($page==='admin-post.php') { return in_array($query['action'] ?? '',['hpads_save','hpads_device_settings','hpads_playlist_preview','hpads_landing_preview'],true); }
+        if ($page==='admin-post.php') { return in_array($query['action'] ?? '',['hpads_save','hpads_device_settings','hpads_playlist_preview','hpads_landing_preview','hwads_purge_device'],true); }
         if (in_array($page,['async-upload.php','media-upload.php'],true)) { return current_user_can('upload_files'); }
         return false;
     }

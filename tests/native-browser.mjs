@@ -53,6 +53,10 @@ const db=await page.locator('#hwads-details').boundingBox(),ds=await page.locato
 if(await page.locator('#hwads-details form').count())throw Error('device editor has nested forms');
 await page.locator('.notice code').evaluateAll(nodes=>nodes.forEach(x=>x.textContent='[local test key redacted]'));
 await page.screenshot({path:root+'tests/native-device-screen.png',fullPage:true});
+await page.route('https://hpads.test/wp-admin/admin-post.php',async r=>{saved=new URLSearchParams(r.request().postData());await r.fulfill({contentType:'text/html',body:'<body>Cleanup request captured</body>'});});
+await page.getByRole('button',{name:'Purge unused media',exact:true}).click();await page.waitForFunction(()=>document.body.textContent.includes('Cleanup request captured'));
+if(saved.get('action')!=='hwads_purge_device'||!saved.get('hwads_purge_nonce')||!saved.get('hwads_purge_device')||saved.has('post_ID'))throw Error('cleanup must use its own nonce-protected form without saving device edits');
+console.log('PASS: device cleanup submits its own action/nonce and does not submit native editor changes.');
 await page.goto('https://hpads.test/wp-admin/post.php?post='+fixture.venue_pid+'&action=edit');await page.locator('#hwads-details').waitFor();
 if(await page.locator('#publish').inputValue()!=='Save Venue' || !await page.locator('input[name="venue_active"]').isChecked())throw Error('venue save/status UI incorrect');
 console.log('PASS: native device details/status/save sidebar and venue Save Venue/active controls.');

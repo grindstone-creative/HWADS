@@ -1,10 +1,10 @@
-# HWADS 0.8.3 — WordPress editor testing build
+# HWADS 0.9.0 — WordPress editor testing build
 
 Centralized WordPress management for venues, locations, devices, advertisers, ad templates, placements and playlists. Install once on the HWADS control site.
 
 ## Install
 
-Download **[dist/hwads-0.8.3.zip](https://github.com/grindstone-creative/HWADS/raw/main/dist/hwads-0.8.3.zip)** and upload it under WordPress → Plugins → Add New → Upload Plugin. Replace the existing plugin when prompted. Use this install ZIP, not the repository's full source ZIP. Reload any open editor tabs after replacing it. Requires WordPress 6.4+, PHP 8.0+ and HTTPS.
+Download **[dist/hwads-0.9.0.zip](https://github.com/grindstone-creative/HWADS/raw/main/dist/hwads-0.9.0.zip)** and upload it under WordPress → Plugins → Add New → Upload Plugin. Replace the existing plugin when prompted. Use this install ZIP, not the repository's full source ZIP. Reload any open editor tabs after replacing it. Requires WordPress 6.4+, PHP 8.0+ and HTTPS.
 
 A fresh installation uses native post storage immediately; it does not need a migration. Internal `hpads` folder/database/API identifiers are retained for compatibility. No existing data is deleted.
 
@@ -18,7 +18,13 @@ Public embeds serve the latest published playlist snapshot, honoring placement s
 
 Dashboard defaults to My Ad Placements. The Show on my dashboard selector saves an individual preference, with Devices available only when selected. Existing scoped list permissions apply.
 
-The separate `player/` package contains the Python Pi sync/player and installation instructions. It uses device-key authentication, verified atomic downloads, offline fallback, one persistent mpv window and persistent disable/enable controls. Install this on the Pi, not as a WordPress plugin. On-device testing is still required.
+The separate `player/` package contains the Python Pi sync/player and installation instructions. It uses device-key authentication, verified atomic downloads, offline fallback, a local browser window with mpv fallback and persistent disable/enable controls. Install this on the Pi, not as a WordPress plugin. On-device testing is still required.
+
+## Browser player 0.2.0 and device health
+
+Separate Pi package: `dist/hwads-pi-0.2.0.zip` (see `player/README.md`). Local Chromium adds placement QR overlays and lightweight wipes while retaining verified downloads, offline playback, disable controls and mpv fallback. Install and test on the Pi; workstation tests do not establish hardware decoding or desktop startup behavior.
+
+Device editor shows heartbeat health readings and a scoped, nonce-protected Purge unused media action. Cleanup is queued for the next heartbeat, protects current/previous/playing files, and only removes unused media older than 24 hours. Reports complete on the following heartbeat. These readings are not play/scan counts.
 
 ## What to test
 
@@ -38,8 +44,8 @@ Dates use the WordPress site timezone and UTC in manifests. Videos play in full.
 
 This is a staging testing build. The new per-location membership model is not included yet; existing company-wide assignments remain. Divi is not bundled or verified here; the native Visual/Code editor is available, but builder-specific integration/rendering still needs a test with the installed Divi version.
 
-Tracking, QR positioning, billing/boost, full self-service and physical Pi synchronization/transition/QR rendering remain pending. The current Pi script reads local media and JSON only; the plugin's manifests still need a sync adapter on the player. QR and transition settings are saved; browser preview supports transitions. Future tracking is intended to exclude staff and preview traffic by default.
+Tracking, configurable QR positioning, billing/boost and full self-service remain pending. The separate Pi package now implements local sync/browser rendering with transitions and QR overlays; Raspberry Pi hardware and desktop startup validation remain required. Future tracking is intended to exclude staff and preview traffic by default.
 
 ## Source and checks
 
-`plugin/hpads/` contains the plugin. `tools/build_plugin.py` builds the install ZIP. `tests/native.php` exercises native saves and authorization in a disposable WordPress fixture; the browser test uses actual rendered WordPress screens and Media Library UI with fixture attachment/POST responses. Real site databases, media, credentials and the fixture are not included. See docs/VALIDATION-0.8.3.md.
+`plugin/hpads/` contains the plugin. `tools/build_plugin.py` builds the install ZIP. `tests/native.php` exercises native saves and authorization in a disposable WordPress fixture; the browser test uses actual rendered WordPress screens and Media Library UI with fixture attachment/POST responses. Real site databases, media, credentials and the fixture are not included. See docs/VALIDATION-0.9.0.md.

@@ -2,7 +2,7 @@
 if (!defined('ABSPATH')) { exit; }
 /** Independent rotation entries and copy-only templates, stored in the existing ad table. */
 final class HPADS_Placements {
-    const TRANSITIONS=['none'=>'None','fade'=>'Fade','slide-left'=>'Slide left','slide-right'=>'Slide right','slide-up'=>'Slide up','slide-down'=>'Slide down','zoom'=>'Zoom'];
+    const TRANSITIONS=['none'=>'None','fade'=>'Fade','slide-left'=>'Slide left','slide-right'=>'Slide right','slide-up'=>'Slide up','slide-down'=>'Slide down','zoom'=>'Zoom','wipe-left'=>'Wipe left','wipe-right'=>'Wipe right','wipe-up'=>'Wipe up','wipe-down'=>'Wipe down','wipe-diagonal'=>'Diagonal wipe','wipe-circle'=>'Circular reveal','wipe-split'=>'Split reveal'];
     const TYPES=['advertising'=>'Advertising','menu'=>'Menu','promotion'=>'Promotion','special'=>'Special','event'=>'Event','house'=>'House content','placeholder'=>'Placeholder'];
     static function manager() { return current_user_can('hpads_admin') || current_user_can('hpads_account_manager'); }
     static function managed_location($lid) {

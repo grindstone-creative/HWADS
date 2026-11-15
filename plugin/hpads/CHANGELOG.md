@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.0 — 2026-11-14
+
+- Added directional/diagonal wipes and circular/split reveals to transition choices and browser playback surfaces.
+- Added device-health telemetry display and authenticated, nonce-protected queued cache cleanup with device acknowledgements.
+- Separate Pi 0.2.0 browser package supports offline image/video playback, placement QR overlays, transitions, bounded crash recovery, persistent disable and mpv fallback. Pi hardware validation remains required.
+
 ## 0.8.3 — 2026-11-14
 
 - Recognize the native WordPress Update submit action and publish a new immutable playlist version in one save. Published playlists retain Update.

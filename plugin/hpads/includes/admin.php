@@ -172,6 +172,7 @@ final class HPADS_Admin {
             self::playlist_selects($r['parent_id'] ?? 0,$d,true);
             if ($r) {
                 echo '<p>Status: '.esc_html(self::status($r['id'])).'</p><p>Playlist API: <code>'.esc_html(rest_url('hpads/v1/devices/'.$r['id'].'/playlist')).'</code></p>';
+                HPADS_Device_Health::render($r);
                 HPADS_Device_QR::render($r);
                 self::check('Rotate device key (old key stops working immediately)','rotate_key',false);
             }

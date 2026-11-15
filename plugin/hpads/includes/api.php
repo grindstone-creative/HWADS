@@ -45,6 +45,7 @@ final class HPADS_API {
         global $wpdb;
         if (strlen($request->get_body())>4096) { return HPADS_Core::error('Heartbeat exceeds 4 KB.',413); }
         $d=HPADS_Core::get($request->get_param('_hpads_authenticated_device'),'device');
+        if (!$d) { return HPADS_Core::error('Invalid device credentials.',401); }
         $table=$wpdb->prefix.'hpads_status'; $now=time();
         $last=(int)$wpdb->get_var($wpdb->prepare("SELECT last_seen FROM $table WHERE device_id=%d",$d['id']));
         if ($last && $now-$last<60) { $r=new WP_REST_Response(['error'=>'Please wait before sending another heartbeat.'],429); $r->header('Retry-After',(string)(60-($now-$last))); return $r; }
@@ -57,9 +58,13 @@ final class HPADS_API {
             if (!$v || !in_array($v['playlist_id'],$allowed,true)) { return HPADS_Core::error('Active version is not assigned to this device.'); }
         }
         $payload=['active_version'=>$active,'player_version'=>substr(sanitize_text_field($body['player_version'] ?? ''),0,80),'state'=>in_array($body['state'] ?? '',['playing','downloading','idle','error'],true)?$body['state']:'idle','error'=>substr(sanitize_text_field($body['error'] ?? ''),0,500)];
+        foreach (['placement_id','last_sync_utc','disk_free_bytes'] as $field) { if (isset($body[$field]) && is_numeric($body[$field])) { $payload[$field]=max(0,min(PHP_INT_MAX,(int)$body[$field])); } }
+        $payload['engine']=in_array($body['engine'] ?? '',['browser','mpv'],true)?$body['engine']:'unknown';$payload['sync_version']=substr(sanitize_text_field($body['sync_version'] ?? ''),0,80);
+        HPADS_Device_Health::acknowledge($d['id'],$body);
         $ok=$wpdb->replace($table,['device_id'=>$d['id'],'last_seen'=>$now,'payload'=>wp_json_encode($payload)]);
         if ($ok===false) { return HPADS_Core::error('Cannot record heartbeat.',500); }
-        return new WP_REST_Response(['ok'=>true,'server_time'=>gmdate('c'),'next_heartbeat_seconds'=>HPADS_Core::interval(),'jitter_seconds'=>30,'playlist_url'=>rest_url('hpads/v1/devices/'.$d['id'].'/playlist')]);
+        $command=HPADS_Device_Health::command($d['id']);
+        return new WP_REST_Response(['commands'=>($command['status'] ?? '')==='pending'?[['type'=>'purge_unused_media','id'=>$command['id']]]:[],'ok'=>true,'server_time'=>gmdate('c'),'next_heartbeat_seconds'=>HPADS_Core::interval(),'jitter_seconds'=>30,'playlist_url'=>rest_url('hpads/v1/devices/'.$d['id'].'/playlist')]);
     }
     static function no_cache($response,$server,$request) {
         if (strpos($request->get_route(),'/hpads/v1/')===0) {

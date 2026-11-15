@@ -31,3 +31,14 @@ echo "DASHBOARD: 3 checks passed.\n";
 ok(HPADS_Native_Editor::publishing(['save'=>'Update','original_post_status'=>'publish','post_status'=>'publish']),'native Update button recognized as playlist publication');
 ok(!HPADS_Native_Editor::publishing(['save'=>'Save Draft','original_post_status'=>'draft','post_status'=>'draft']),'native Save Draft remains unpublished');
 
+wp_set_current_user(1);$_POST=[];$_GET=[];$_REQUEST=[];
+$health_fixture=json_decode(file_get_contents('/wordpress/wp-content/hwads-native-fixture.json'),true);
+$device=HPADS_Post_Types::record($health_fixture['device_pid']);
+update_option('hwads_purge_'.$device['id'],['id'=>'test-command-1','status'=>'pending','requested_at'=>time()],false);
+HPADS_Device_Health::acknowledge($device['id'],['purge_command_id'=>'wrong']);ok(HPADS_Device_Health::command($device['id'])['status']==='pending','wrong cleanup acknowledgement cannot complete command');
+$heartbeat=new WP_REST_Request('POST','/hpads/v1/devices/'.$device['id'].'/heartbeat');$heartbeat->set_header('content-type','application/json');$heartbeat->set_param('_hpads_authenticated_device',$device['id']);$heartbeat->set_body(wp_json_encode(['active_version'=>0,'state'=>'playing','engine'=>'browser','placement_id'=>91,'disk_free_bytes'=>1000000000,'last_sync_utc'=>time(),'player_version'=>'HWADS-Pi/0.2.0','sync_version'=>'0.2.0']));
+$heartbeat->set_param('_hpads_authenticated_device',$device['id']);$response=HPADS_API::heartbeat($heartbeat);ok($response instanceof WP_REST_Response && $response->get_status()===200 && $response->get_data()['commands'][0]['id']==='test-command-1','authenticated heartbeat delivers only that device cleanup request');
+ob_start();HPADS_Device_Health::render($device);$health=ob_get_clean();ok(strpos($health,'browser')!==false && strpos($health,'Free disk space')!==false && strpos($health,'Purge unused media')!==false,'native device health renders telemetry and cleanup button');
+HPADS_Device_Health::acknowledge($device['id'],['purge_command_id'=>'test-command-1','purge_files'=>3,'purge_bytes'=>1024]);ok(HPADS_Device_Health::command($device['id'])['status']==='completed','matching device acknowledgement completes cleanup with results');
+ok(isset(HPADS_Placements::TRANSITIONS['wipe-diagonal']) && isset(HPADS_Placements::TRANSITIONS['wipe-circle']),'lightweight wipe choices are available to templates and placements');
+echo "DEVICE HEALTH: 5 checks passed.\n";

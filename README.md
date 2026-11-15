@@ -1,10 +1,10 @@
-# HWADS 0.9.0 — WordPress editor testing build
+# HWADS 0.9.1 — WordPress editor testing build
 
 Centralized WordPress management for venues, locations, devices, advertisers, ad templates, placements and playlists. Install once on the HWADS control site.
 
 ## Install
 
-Download **[dist/hwads-0.9.0.zip](dist/hwads-0.9.0.zip)** and upload it under WordPress → Plugins → Add New → Upload Plugin. Replace the existing plugin when prompted. Use this install ZIP, not the repository's full source ZIP. Reload any open editor tabs after replacing it. Requires WordPress 6.4+, PHP 8.0+ and HTTPS.
+Download **[dist/hwads-0.9.1.zip](dist/hwads-0.9.1.zip)** and upload it under WordPress → Plugins → Add New → Upload Plugin. Replace the existing plugin when prompted. Use this install ZIP, not the repository's full source ZIP. Reload any open editor tabs after replacing it. Requires WordPress 6.4+, PHP 8.0+ and HTTPS.
 
 A fresh installation uses native post storage immediately; it does not need a migration. Internal `hpads` folder/database/API identifiers are retained for compatibility. No existing data is deleted.
 
@@ -25,6 +25,12 @@ The separate `player/` package contains the Python Pi sync/player and installati
 Separate Pi package: `dist/hwads-pi-0.2.0.zip` (see `player/README.md`). Local Chromium adds placement QR overlays and lightweight wipes while retaining verified downloads, offline playback, disable controls and mpv fallback. Install and test on the Pi; workstation tests do not establish hardware decoding or desktop startup behavior.
 
 Device editor shows heartbeat health readings and a scoped, nonce-protected Purge unused media action. Cleanup is queued for the next heartbeat, protects current/previous/playing files, and only removes unused media older than 24 hours. Reports complete on the following heartbeat. These readings are not play/scan counts.
+
+## Shared software update window
+
+Locations and their devices show the same Location software update window setting. Authorized venue admins, scoped account managers and global admins can save it from either editor; ordinary venue users cannot. It is disabled by default and uses the WordPress site timezone. The dedicated save changes only this shared location policy. There is no device override.
+
+The API exposes this 30-minute window and requires confirmed TV-off status for future automatic installation. Software installation and TV-power detection are not implemented; saving this setting causes no restarts and does not change playlist/media polling.
 
 ## What to test
 
@@ -48,4 +54,4 @@ Tracking, configurable QR positioning, billing/boost and full self-service remai
 
 ## Source and checks
 
-`plugin/hpads/` contains the plugin. `tools/build_plugin.py` builds the install ZIP. `tests/native.php` exercises native saves and authorization in a disposable WordPress fixture; the browser test uses actual rendered WordPress screens and Media Library UI with fixture attachment/POST responses. Real site databases, media, credentials and the fixture are not included. See docs/VALIDATION-0.9.0.md.
+`plugin/hpads/` contains the plugin. `tools/build_plugin.py` builds the install ZIP. `tests/native.php` exercises native saves and authorization in a disposable WordPress fixture; the browser test uses actual rendered WordPress screens and Media Library UI with fixture attachment/POST responses. Real site databases, media, credentials and the fixture are not included. See docs/VALIDATION-0.9.1.md.

@@ -69,7 +69,7 @@ final class HPADS_Admin {
         elseif ($kind==='users') { HPADS_Teams::page(); }
         elseif ($kind==='settings') { self::settings(); }
         else {
-            if (isset($_GET['edit'])) { self::editor($kind,absint($_GET['edit'])); }
+            if (isset($_GET['edit'])) { self::editor($kind,absint($_GET['edit']));if (in_array($kind,['location','device'],true)) { $record=HPADS_Core::get(absint($_GET['edit']),$kind);if ($record && HPADS_Core::can($record)) { HPADS_Update_Policy::render($record); } } }
             else { self::listing($kind); }
         }
         echo '</div>';

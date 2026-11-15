@@ -42,3 +42,16 @@ ob_start();HPADS_Device_Health::render($device);$health=ob_get_clean();ok(strpos
 HPADS_Device_Health::acknowledge($device['id'],['purge_command_id'=>'test-command-1','purge_files'=>3,'purge_bytes'=>1024]);ok(HPADS_Device_Health::command($device['id'])['status']==='completed','matching device acknowledgement completes cleanup with results');
 ok(isset(HPADS_Placements::TRANSITIONS['wipe-diagonal']) && isset(HPADS_Placements::TRANSITIONS['wipe-circle']),'lightweight wipe choices are available to templates and placements');
 echo "DEVICE HEALTH: 5 checks passed.\n";
+wp_set_current_user(1);$policy_location=HPADS_Core::get($device['parent_id'],'location');
+ok(!HPADS_Update_Policy::policy($policy_location)['enabled'],'software update scheduling defaults to disabled');
+$policy_input=['location_revision'=>$policy_location['revision'],'schedule_enabled'=>1,'update_time'=>'02:15'];
+ok(!is_wp_error(HPADS_Update_Policy::apply($policy_location['id'],$policy_input)),'owner saves shared location update time');
+$shared=HPADS_Update_Policy::location($device);ok(HPADS_Update_Policy::policy($shared)['time']==='02:15' && HPADS_Update_Policy::policy($shared)['timezone']===wp_timezone_string(),'device resolves the same location schedule in WordPress timezone');
+ok(is_wp_error(HPADS_Update_Policy::apply($shared['id'],$policy_input)),'stale location schedule rejected');
+$policy_input['location_revision']=$shared['revision'];$policy_input['update_time']='25:70';ok(is_wp_error(HPADS_Update_Policy::apply($shared['id'],$policy_input)),'invalid software update time rejected');
+$policy_user=wp_create_user('policy_'.wp_generate_password(8,false,false),wp_generate_password(20));$pu=new WP_User($policy_user);$pu->set_role('hpads_venue_admin');update_user_meta($policy_user,'hpads_companies',[$shared['parent_id']]);wp_set_current_user($policy_user);
+$policy_input['update_time']='22:30';ok(!is_wp_error(HPADS_Update_Policy::apply($shared['id'],$policy_input)),'assigned venue admin can edit location update schedule without broader device management');
+$pu->set_role('hpads_venue_user');wp_set_current_user(0);wp_set_current_user($policy_user);ok(!HPADS_Update_Policy::allowed(HPADS_Core::get($shared['id'],'location')),'ordinary venue user cannot change update schedule');
+$pu->set_role('hpads_account_manager');wp_set_current_user(0);wp_set_current_user($policy_user);ok(HPADS_Update_Policy::allowed(HPADS_Core::get($shared['id'],'location')),'assigned account manager can edit shared update schedule');
+update_user_meta($policy_user,'hpads_companies',[]);ok(!HPADS_Update_Policy::allowed(HPADS_Core::get($shared['id'],'location')),'unassigned account manager cannot change another location schedule');wp_set_current_user(1);$_POST=[];$_GET=[];$_REQUEST=[];
+echo "UPDATE POLICY: 9 checks passed.\n";

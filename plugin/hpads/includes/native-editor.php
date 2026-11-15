@@ -64,7 +64,7 @@ final class HPADS_Native_Editor {
         wp_nonce_field('hwads_native_save','hwads_native_nonce');
         echo '<input type="hidden" name="hwads_revision" value="'.(int)($r['revision'] ?? 0).'"><input type="hidden" name="id" value="'.(int)($r['id'] ?? 0).'">';
         if (isset(self::CONFIG[$post->post_type])) {
-            $kind=self::CONFIG[$post->post_type];ob_start();HPADS_Admin::editor($kind,(int)($r['id'] ?? 0));$html=ob_get_clean();
+            $kind=self::CONFIG[$post->post_type];if ($r && in_array($kind,['location','device'],true)) { HPADS_Update_Policy::render($r); }ob_start();HPADS_Admin::editor($kind,(int)($r['id'] ?? 0));$html=ob_get_clean();
             if (preg_match('~<fieldset[^>]*>(.*?)</fieldset></form>~s',$html,$m)) { $body=preg_replace('~<p><label><strong>Name</strong>.*?</p>~s','',$m[1],1);$body=preg_replace('~<p class="submit">.*?</p>~s','',$body);echo $body; }
             if ($kind==='company') { HPADS_Admin::check('Venue active','venue_active',$d['active'] ?? true);echo '<p>A saved venue is available immediately; it does not require approval. Active/inactive is its administrative status. Device playback is managed separately.</p>'; }return;
         }

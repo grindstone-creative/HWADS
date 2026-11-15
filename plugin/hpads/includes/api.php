@@ -28,7 +28,7 @@ final class HPADS_API {
         $l=HPADS_Core::get($d['parent_id'],'location');
         if (!$l) { return HPADS_Core::error('Device location is unavailable.',404); }
         $versions=HPADS_Core::selected($d);
-        $payload=['schema'=>1,'device_id'=>(int)$d['id'],'device_settings_url'=>HPADS_Device_QR::url($d['id']),'orientation'=>$d['data']['orientation'] ?? 'horizontal','device_type'=>$d['data']['type'],'custom_type'=>$d['data']['custom_type'] ?? '', 'location_id'=>(int)$l['id'],'venue_company_id'=>(int)$l['parent_id'],'heartbeat_seconds'=>HPADS_Core::interval(),'house_in_rotation'=>!empty($l['data']['house_rotation']),'primary'=>null,'house'=>null];
+        $payload=['software_update_policy'=>HPADS_Update_Policy::policy($l),'schema'=>1,'device_id'=>(int)$d['id'],'device_settings_url'=>HPADS_Device_QR::url($d['id']),'orientation'=>$d['data']['orientation'] ?? 'horizontal','device_type'=>$d['data']['type'],'custom_type'=>$d['data']['custom_type'] ?? '', 'location_id'=>(int)$l['id'],'venue_company_id'=>(int)$l['parent_id'],'heartbeat_seconds'=>HPADS_Core::interval(),'house_in_rotation'=>!empty($l['data']['house_rotation']),'primary'=>null,'house'=>null];
         foreach ($versions as $slot=>$version) {
             $manifest=HPADS_Core::version($version);
             if ($manifest) {

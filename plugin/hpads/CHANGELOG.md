@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.1 — 2026-11-14
+
+- Added one shared location software-update window, editable from either location or device with a separate nonce-protected save. Uses WordPress timezone and defaults disabled.
+- Assigned venue admins/account managers and global admins can change it; no device-wide management rights are granted to venue staff.
+- API exposes the policy for future updater use, with confirmed TV-off requirement. Automatic installation and TV-power detection remain unimplemented; this release does not schedule any restarts.
+
 ## 0.9.0 — 2026-11-14
 
 - Added directional/diagonal wipes and circular/split reveals to transition choices and browser playback surfaces.

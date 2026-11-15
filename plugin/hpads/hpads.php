@@ -2,7 +2,7 @@
 /**
  * Plugin Name: HWADS
  * Description: Central venue, device, media and playlist management.
- * Version: 0.9.0
+ * Version: 0.9.1
  * Requires at least: 6.4
  * Requires PHP: 8.0
  * Author: HWADS
@@ -10,7 +10,7 @@
  * Text Domain: hpads
  */
 if (!defined('ABSPATH')) { exit; }
-define('HPADS_VERSION', '0.9.0');
+define('HPADS_VERSION', '0.9.1');
 define('HPADS_FILE', __FILE__);
 require_once __DIR__ . '/includes/post-types.php';
 add_action('init',['HPADS_Post_Types','register']);
@@ -25,6 +25,8 @@ require_once __DIR__ . '/includes/admin.php';
 require_once __DIR__ . '/includes/admin-access.php';
 require_once __DIR__ . '/includes/native-editor.php';
 HPADS_Native_Editor::init();
+require_once __DIR__ . '/includes/update-policy.php';
+HPADS_Update_Policy::init();
 require_once __DIR__ . '/includes/device-health.php';
 HPADS_Device_Health::init();
 require_once __DIR__ . '/includes/api.php';

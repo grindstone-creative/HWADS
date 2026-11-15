@@ -1,10 +1,10 @@
-# HWADS 0.8.2 — WordPress editor testing build
+# HWADS 0.8.3 — WordPress editor testing build
 
 Centralized WordPress management for venues, locations, devices, advertisers, ad templates, placements and playlists. Install once on the HWADS control site.
 
 ## Install
 
-Download **[dist/hwads-0.8.2.zip](dist/hwads-0.8.2.zip)** and upload it under WordPress → Plugins → Add New → Upload Plugin. Replace the existing plugin when prompted. Use this install ZIP, not the repository's full source ZIP. Reload any open editor tabs after replacing it. Requires WordPress 6.4+, PHP 8.0+ and HTTPS.
+Download **[dist/hwads-0.8.3.zip](dist/hwads-0.8.3.zip)** and upload it under WordPress → Plugins → Add New → Upload Plugin. Replace the existing plugin when prompted. Use this install ZIP, not the repository's full source ZIP. Reload any open editor tabs after replacing it. Requires WordPress 6.4+, PHP 8.0+ and HTTPS.
 
 A fresh installation uses native post storage immediately; it does not need a migration. Internal `hpads` folder/database/API identifiers are retained for compatibility. No existing data is deleted.
 
@@ -42,4 +42,4 @@ Tracking, QR positioning, billing/boost, full self-service and physical Pi synch
 
 ## Source and checks
 
-`plugin/hpads/` contains the plugin. `tools/build_plugin.py` builds the install ZIP. `tests/native.php` exercises native saves and authorization in a disposable WordPress fixture; the browser test uses actual rendered WordPress screens and Media Library UI with fixture attachment/POST responses. Real site databases, media, credentials and the fixture are not included. See docs/VALIDATION-0.8.2.md.
+`plugin/hpads/` contains the plugin. `tools/build_plugin.py` builds the install ZIP. `tests/native.php` exercises native saves and authorization in a disposable WordPress fixture; the browser test uses actual rendered WordPress screens and Media Library UI with fixture attachment/POST responses. Real site databases, media, credentials and the fixture are not included. See docs/VALIDATION-0.8.3.md.

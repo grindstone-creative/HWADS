@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.3 — 2026-11-14
+
+- Recognize the native WordPress Update submit action and publish a new immutable playlist version in one save. Published playlists retain Update.
+- Preserve native publication status on templates and placements instead of resetting every save to draft.
+
 ## 0.8.2 — 2026-11-14
 
 - Moved playlist card Remove directly next to Duplicate. Removal behavior is unchanged; Update publishes the revised playlist.

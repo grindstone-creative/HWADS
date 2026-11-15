@@ -27,3 +27,7 @@ ob_start();HPADS_Admin::dashboard();$dashboard=ob_get_clean();
 ok(strpos($dashboard,'<h2>My Ad Placements</h2>')!==false,'dashboard preference is isolated per user');
 wp_set_current_user(1);$_GET=[];$_POST=[];$_REQUEST=[];
 echo "DASHBOARD: 3 checks passed.\n";
+
+ok(HPADS_Native_Editor::publishing(['save'=>'Update','original_post_status'=>'publish','post_status'=>'publish']),'native Update button recognized as playlist publication');
+ok(!HPADS_Native_Editor::publishing(['save'=>'Save Draft','original_post_status'=>'draft','post_status'=>'draft']),'native Save Draft remains unpublished');
+

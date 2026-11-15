@@ -120,7 +120,7 @@ final class HPADS_Native_Editor {
         if ($r && (int)($input['hwads_revision'] ?? 0)!==(int)$r['revision']) { wp_die('This entry changed. Reload before saving.','HWADS',['response'=>409]); }
         if (isset(self::CONFIG[$post->post_type])) { $check=self::prepare_config(self::CONFIG[$post->post_type],$input,$r);if (is_wp_error($check)) { wp_die(esc_html($check->get_error_message()),'HWADS',['response'=>400,'back_link'=>true]); } }
         elseif ($post->post_type!=='hpads_playlist') { $in=self::input($post,$input);$check=HPADS_Placements::prepare($in,$r);if (is_wp_error($check)) { wp_die(esc_html($check->get_error_message()),'HWADS',['response'=>400,'back_link'=>true]); } }
-        $data['post_status']=isset(self::CONFIG[$post->post_type])?($post->post_type==='hpads_venue' && empty($input['venue_active'])?'draft':'publish'):($post->post_type==='hpads_playlist' && self::publishing($input)?'publish':'draft');return $data;
+        $data['post_status']=isset(self::CONFIG[$post->post_type])?($post->post_type==='hpads_venue' && empty($input['venue_active'])?'draft':'publish'):($post->post_type==='hpads_playlist'?(self::publishing($input)?'publish':(!empty($r['data']['published_version'])?'publish':'draft')):$data['post_status']);return $data;
     }
     static function save($pid,$post,$update) {
         if (self::$writing || !self::supports($post->post_type) || empty($_POST['hwads_native_nonce']) || wp_is_post_revision($pid) || wp_is_post_autosave($pid)) { return; }
@@ -156,7 +156,7 @@ final class HPADS_Native_Editor {
         if (!is_wp_error($result) && ($raw['hwads_copy'] ?? '')==='template') { $copy=HPADS_Placements::copy(HPADS_Core::get($result),'template');if (!is_wp_error($copy)) { self::$redirect=HPADS_Native_Editor::url('hpads_template',$copy); } }
         return $result;
     }
-    static function publishing($raw) { return !empty($raw['hwads_publish']) || (!empty($raw['publish']) && empty($raw['save'])); }
+    static function publishing($raw) { return !empty($raw['hwads_publish']) || (!empty($raw['publish']) && empty($raw['save'])) || (!empty($raw['save']) && ($raw['original_post_status'] ?? '')==='publish' && ($raw['post_status'] ?? '')==='publish'); }
     static function prepare_config($kind,$in,$r) {
         if ($r ? !HPADS_Core::can($r,true) : !HPADS_Admin::can_add($kind)) { return HPADS_Core::error('Access denied.',403); }
         $title=sanitize_text_field($in['post_title'] ?? '');if (!$title || strlen($title)>200) { return HPADS_Core::error('Enter a name of no more than 200 bytes.'); }

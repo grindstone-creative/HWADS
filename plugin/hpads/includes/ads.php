@@ -1,15 +1,20 @@
 <?php
 if (!defined('ABSPATH')) { exit; }
 final class HPADS_Ads {
-    static function can_media($aid,$type,$oid) {
-        if (get_post_type($aid)!=='attachment' || !HPADS_Placements::author_owner($type,$oid)) { return false; }
+    static function can_media($aid,$type,$oid,$context=null) {
+        if (get_post_type($aid)!=='attachment') { return false; }
+        if (!HPADS_Placements::author_owner($type,$oid)) {
+            if (!$context || !HPADS_Content_Access::grant($context,true) || HPADS_Workflow::owner_ref($context)!==[$type,(int)$oid]) { return false; }
+            $assets=[(int)($context['data']['attachment_id']??0)];foreach($context['data']['overlays']??[] as $o){if(isset($o['attachment_id']))$assets[]=(int)$o['attachment_id'];}
+            return in_array((int)$aid,$assets,true)||(int)get_post_field('post_author',$aid)===get_current_user_id();
+        }
         if (HPADS_Workflow::global_admin()) { return true; }
         foreach (HPADS_Core::all('creative') as $entry) { if ((int)($entry['data']['attachment_id'] ?? 0)===$aid && HPADS_Workflow::owner_ref($entry)===[$type,(int)$oid]) { return true; } }
         return get_post_meta($aid,'_hpads_owner',true)===$type.':'.$oid || (int)get_post_field('post_author',$aid)===get_current_user_id();
     }
     static function media_query($args) {
         if (!current_user_can('hpads_access') || HPADS_Workflow::global_admin()) { return $args; }
-        global $wpdb;$ids=array_map('intval',$wpdb->get_col($wpdb->prepare("SELECT ID FROM $wpdb->posts WHERE post_type='attachment' AND post_author=%d",get_current_user_id())));foreach (HPADS_Core::all('creative') as $entry) { if (!empty($entry['data']['attachment_id'])) { $ids[]=(int)$entry['data']['attachment_id']; } }
+        global $wpdb;$ids=array_map('intval',$wpdb->get_col($wpdb->prepare("SELECT ID FROM $wpdb->posts WHERE post_type='attachment' AND post_author=%d",get_current_user_id())));foreach (HPADS_Core::all('creative') as $entry) { if (!empty($entry['data']['attachment_id'])) { $ids[]=(int)$entry['data']['attachment_id'];foreach($entry['data']['overlays']??[] as $o){if(!empty($o['attachment_id']))$ids[]=(int)$o['attachment_id'];} } }
         $args['post__in']=$ids?:[0];return $args;
     }
     static function owners($placements=false) {
@@ -50,13 +55,17 @@ final class HPADS_Ads {
         }
         echo '<p><label><strong>'.($r?'Replace media (optional)':'Upload ad media').'</strong><br><input type="file" name="media" '.(!$r?'required ':'').'data-max-bytes="'.esc_attr(wp_max_upload_size()).'" accept="image/jpeg,image/png,image/webp,video/mp4,video/webm"></label><span class="hpads-upload-size" aria-live="polite"></span></p><p>JPG, PNG, WebP, MP4 or WebM · Server maximum '.esc_html(size_format(wp_max_upload_size())).'. Square or unreadable files require an explicit orientation.</p>';
     }
+    static function resolution($g) {
+        $w=(int)($g['width'] ?? 0);$h=(int)($g['height'] ?? 0);
+        return ($w>=1920 && $h>=1080 || $w>=1080 && $h>=1920)?true:HPADS_Core::error('TV media must be at least 1920 × 1080 or 1080 × 1920 pixels. This file is '.$w.' × '.$h.'.');
+    }
     static function record($in,$r,$type,$oid,$validated_targets=null) {
         $targets=$validated_targets!==null?$validated_targets:HPADS_Workflow::targets($type,$oid,sanitize_key($in['target_mode'] ?? 'selected'),$in['locations'] ?? []);
         if (is_wp_error($targets)) { return $targets; }
         $aid=(int)($r['data']['attachment_id'] ?? 0); $new=false;
         $file=$_FILES['media'] ?? null;
         $chosen=absint($in['attachment_id'] ?? 0);
-        if ($chosen && $chosen!==$aid) { if (!self::can_media($chosen,$type,$oid)) { return HPADS_Core::error('This media is not available for the selected owner.',403); }$aid=$chosen; }
+        if ($chosen && $chosen!==$aid) { if (!self::can_media($chosen,$type,$oid,$r)) { return HPADS_Core::error('This media is not available for the selected owner.',403); }$aid=$chosen; }
         if ((!$r && !$chosen) || (is_array($file) && (int)($file['error'] ?? UPLOAD_ERR_NO_FILE)!==UPLOAD_ERR_NO_FILE)) {
             $valid=HPADS_Admin::validate_upload($file); if (is_wp_error($valid)) { return $valid; }
             require_once ABSPATH.'wp-admin/includes/file.php'; require_once ABSPATH.'wp-admin/includes/media.php'; require_once ABSPATH.'wp-admin/includes/image.php';
@@ -66,10 +75,12 @@ final class HPADS_Ads {
         if ($new) { update_post_meta($aid,'_hpads_owner',$type.':'.$oid); }
         $g=HPADS_Core::geometry($aid,sanitize_key($in['orientation'] ?? 'auto'));
         if (is_wp_error($g)) { if ($new) { wp_delete_attachment($aid,true); } return $g; }
+        if ($new || $aid!==(int)($r['data']['attachment_id'] ?? 0)) { $quality=self::resolution($g);if (is_wp_error($quality)) { if ($new) { wp_delete_attachment($aid,true); }return $quality; } }
         $d=$r['data'] ?? [];
         return array_merge($d,$g,['workflow'=>2,'owner_type'=>$type,'owner_id'=>(int)$oid,'attachment_id'=>(int)$aid,'location_id'=>0,'locations'=>$targets,'target_mode'=>sanitize_key($in['target_mode'] ?? 'selected'),'state'=>'draft','content_revision'=>(int)($d['content_revision'] ?? 0)+1,'submission_revision'=>0,'manager_review'=>[],'reviews'=>[],'approved_locations'=>[],'created_by'=>$d['created_by'] ?? get_current_user_id()]);
     }
     static function controls($r) {
+        if (HPADS_Approvals::placement($r)) { HPADS_Approvals::controls($r);return; }
         $d=$r['data'];
         if (HPADS_Workflow::automatic()) { echo '<p>Approvals are automatic. Save the placement, then save and publish its playlist when ready.</p>'; return; }
         if (HPADS_Workflow::can_ad($r,true) && !in_array($d['state'] ?? '',['account_review','venue_review'],true)) {

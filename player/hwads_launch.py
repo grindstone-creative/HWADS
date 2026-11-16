@@ -7,6 +7,9 @@ from pathlib import Path
 import sys
 p=argparse.ArgumentParser();p.add_argument('--root',default='~/hpads');args=p.parse_args()
 root=Path(args.root).expanduser().resolve()
+from hwads_update import atomic, ENVIRONMENT
+saved={k:os.environ[k] for k in ENVIRONMENT if os.environ.get(k)}
+if saved.get('DISPLAY') or saved.get('WAYLAND_DISPLAY'):atomic(root/'config/player-environment.json',saved)
 try:engine=json.loads((root/'config/player-engine.json').read_text())['engine']
 except (OSError,ValueError,KeyError):engine='browser'
 script='hwads_player.py' if engine=='mpv' else 'hwads_browser.py'

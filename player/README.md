@@ -1,21 +1,35 @@
-# HWADS Pi player 0.2.0
+> **HWADS Box 0.5.4 / plugin 0.15.9:** supports acknowledged pending-analytics checkpoint purge. Update the plugin and Box runtime to use purge; older runtimes ignore that command. No updater protocol, runtime filenames or dependency changes. Playback and reported history are preserved. Snapshot purges can discard unreported metrics; active plays can enqueue fresh checkpoints.
+
+> **Pi 0.5.3** reports RAM, CPU usage/load/cores, CPU temperature and uptime with the existing heartbeat. Pair with HWADS 0.14.4. No new dependencies or updater protocol changes. Missing Linux probes remain unknown.
+
+> **Pi 0.5.2:** supports location Playback mix with HWADS 0.14.2, using observed playback time, offline shuffle state, fallback and original playlist analytics. Existing updater-ready devices can install this ZIP through Devices → Player Updates. No new dependencies or runtime filenames are needed. Older version-specific bootstrap steps below remain a reference; use the matching current ZIP for a fresh install.
+
+> Pi **0.5.1** fixes legacy house fallback/order, reports playing files for cleanup protection and preserves truthful disabled/error heartbeat states. Chromium remains the default; mpv is an explicitly selectable alternative.
+
+> Integrated candidate: WordPress **0.13.0** / Pi **0.4.2**. Includes screen analytics and native list thumbnails. See `docs/UPDATE-0.13.0.md` at the project root for installation and counting limits. Earlier version-specific instructions below describe the updater baseline.
+
+# HWADS Pi player 0.4.0 / 0.4.1
 
 Local Chromium kiosk playback with transitions and placement QR overlays. Existing verified/offline sync remains in Python; WordPress is not loaded on the screen. Requires Raspberry Pi OS Desktop, Python 3.9+, Chromium and mpv (fallback). Run installation as the desktop user, not root.
 
-## Upgrade the working Pi
+## One-time updater installation
+
+Install the WordPress 0.12.0 plugin first. Download hwads-pi-0.4.0.zip to the Pi's Downloads folder. In a terminal on the Pi desktop (not a root shell):
 
 ```sh
-sudo apt install chromium mpv python3 unzip
-mkdir -p ~/hwads-setup
-cd ~/hwads-setup
-curl -fL https://github.com/grindstone-creative/HWADS/raw/main/dist/hwads-pi-0.2.0.zip -o hwads-pi-0.2.0.zip
-unzip -o hwads-pi-0.2.0.zip
+cd ~/Downloads
+unzip -o hwads-pi-0.4.0.zip
 bash hwads-pi/install.sh
+systemctl --user enable --now hwads-sync
 python3 ~/hpads/scripts/hwads_sync.py --once
 python3 ~/hpads/scripts/hwads-control.py enable --engine browser
 ```
 
-Installer preserves `config/device.json`, media and placeholders. It stops this installation’s old player and installs with playback disabled. It selects browser mode, backs up the legacy launcher/playlist/autostart once, and restarts an already-running user sync service to load the new client. On first installation, edit `~/hpads/config/device.json` with the site URL, device ID and 43-character device key, then `systemctl --user enable --now hwads-sync`. Keep config private (`chmod 600`). Never paste the key into chat or a public URL.
+If already extracted, run the installer from the extracted hwads-pi directory. Chromium, mpv and Python3 must already be installed. Installation preserves device.json, cached media and placeholders, installs stable user updater/launcher services, and leaves playback disabled until the enable command. On a fresh device, edit ~/hpads/config/device.json with your HTTPS site URL, device ID and device key before enabling sync. Never put that key into an update ZIP or chat.
+
+Once the player has run from the desktop, its display environment is recorded for remote restarts. Under WordPress → HWADS → Devices → Player Updates, wait for the device to report updater readiness and installed version 0.4.0. Upload hwads-pi-0.4.1.zip there, select the Pi, and install. 0.4.1 intentionally has the same functionality and a newer reported runtime version so the first remote update can be verified. A startup failure restores the previous code. Roll back is an explicit action after a successful remote update. User configuration and media are outside releases and are preserved.
+
+Updates are manual, next-check-in deployments. The shared automatic update window / TV-off scheduling is not active. Updating the stable updater protocol or OS dependencies still requires a manual install. Check logs/updater.log and WordPress status if anything fails. Hardware/systemd/Chromium recovery must be verified on the actual Pi; automated tests simulate services and rollback.
 
 ## Stop or switch players
 
@@ -49,3 +63,15 @@ Purge unused media queues a command for the next heartbeat. Only unused direct f
 Automated Python tests cover verified activation, offline retention, cache cleanup safety, heartbeat, loopback access controls, video ranges and persistent mpv fallback. Local Chromium tests exercise actual image/video playback, wipes, QR toggling and empty playlists with no external requests. These are workstation tests: Raspberry Pi hardware acceleration, H.264 support, desktop autostart, screen blanking, recovery under OS failure and sustained operation still need on-device testing. Do not treat this as a completed Pi deployment.
 
 Rollback without uninstalling: disable, then `enable --engine mpv`. To restore the original legacy shell player, stop/disable sync and restore the `.pre-hwads` launcher/autostart/playlist backups. Legacy list-only playback cannot read the new object playlist. No media is deleted by installation.
+
+## Keyboard controls
+
+In browser mode, with the player focused, Right Arrow skips to the next placement and Left Arrow returns to the previous placement, wrapping at either end. Videos can be skipped manually; automatic playback resumes with the new placement. Held keys do not repeatedly skip. The mpv fallback uses its own controls.
+
+The dedicated kiosk profile uses `--password-store=basic` to avoid desktop keyring prompts. Do not save website passwords in this profile; its password store is unencrypted.
+
+## 0.3.1 visual overlays
+
+Text, Media Library logos and custom QR geometry/colors use plain HTML/CSS/SVG in the dedicated Chromium player. All image assets are downloaded and verified before atomic playlist activation, retained offline, and protected from cleanup while active/previous/in playback. No design library, remote font or QR service is loaded. Matching fade-out/fade-in uses an opaque incoming slide under the fading outgoing slide to avoid a black dip.
+
+Install this player update together with plugin 0.10.0. The installer preserves device configuration and media, stops the old player, and leaves playback disabled. Sync once, then enable browser mode. Confirm video performance and QR scanning on the actual Pi/TV before unattended use.

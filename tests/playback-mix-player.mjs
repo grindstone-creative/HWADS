@@ -1,0 +1,14 @@
+import {spawn} from 'node:child_process';import fs from 'node:fs';import assert from 'node:assert/strict';
+import {chromium} from '/Users/grindstone/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs';
+const process=spawn('python3',[new URL('./fixtures/mix-browser-server.py',import.meta.url).pathname],{stdio:['pipe','pipe','pipe']});let stderr='';process.stderr.on('data',v=>stderr+=v);
+const fixture=await new Promise((resolve,reject)=>{let out='';process.stdout.on('data',v=>{out+=v;if(out.includes('\n'))resolve(JSON.parse(out.split('\n')[0]));});process.on('exit',code=>reject(Error('server '+code+' '+stderr)));});
+const browser=await chromium.launch({headless:true,executablePath:'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'});
+try{
+ const page=await browser.newPage({viewport:{width:1280,height:720}}),events=[],selections=[],errors=[];page.on('pageerror',e=>errors.push(e.message));page.on('request',req=>{if(req.url().endsWith('/events'))events.push(JSON.parse(req.postData()));});page.on('response',async r=>{if(r.url().endsWith('/next')&&r.ok())selections.push((await r.json()).item);});await page.goto(fixture.url);
+ await page.waitForFunction(()=>!!document.querySelector('video')&&!document.querySelector('video').paused);const videoDuration=await page.locator('video').evaluate(v=>v.duration);assert.ok(Number.isFinite(videoDuration)&&videoDuration>0);
+ await page.waitForTimeout(300);await page.keyboard.press('ArrowRight');
+ for(let i=0;i<180&&!events.some(e=>e.version_id===202&&e.outcome==='completed');i++)await page.waitForTimeout(200);
+ assert.ok(events.some(e=>e.version_id===202&&e.outcome==='interrupted'),'arrow skips video with partial attribution');const full=events.find(e=>e.version_id===202&&e.outcome==='completed');assert.ok(full,'video later reaches natural completion');assert.ok(full.elapsed_ms>=videoDuration*750,'full video duration is preserved');
+ assert.ok(events.some(e=>e.version_id===101&&e.outcome==='completed'),'image playlist completes plays');assert.ok(events.every(e=>e.version_id===(e.placement_id===21?202:101)),'mixed plays retain original version and placement attribution');assert.ok(selections.length>=3);for(let i=1;i<selections.length;i++)assert.notEqual(selections[i].placement_id,selections[i-1].placement_id);
+ const state=JSON.parse(fs.readFileSync(fixture.root+'/config/playback-mix-state.json'));assert.ok(Object.keys(state.balances).length===2);assert.ok(!JSON.stringify(state).includes('fixture-grant'));assert.deepEqual(errors,[]);console.log('PASS: actual Chromium mixed images/full video, partial arrow skip, automatic continuation, no immediate repeats, actual-time feedback and original analytics attribution.');
+}finally{await browser.close();process.stdin.end();}

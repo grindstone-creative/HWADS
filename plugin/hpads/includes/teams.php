@@ -8,12 +8,14 @@ final class HPADS_Teams {
     static function family($u) {
         foreach (['hpads_owner','hpads_team_admin','hpads_producer','hpads_sales','hpads_account_manager','hpads_admin'] as $r) { if ($u->has_cap($r)) { return 'staff'; } }
         foreach (['hpads_venue_admin','hpads_venue_user','hpads_venue'] as $r) { if ($u->has_cap($r)) { return 'venue'; } }
+        if ($u->has_cap('hpads_designer')) { return 'designer'; }
         return 'advertiser';
     }
     static function visible($u) {
         if (!self::relevant($u)) { return false; }
         if (HPADS_Workflow::global_staff()) { return true; }
         if (self::family($u)==='staff') { return (int)$u->ID===get_current_user_id(); }
+        if (self::family($u)==='designer') { return self::designer_in_scope($u); }
         $type=self::family($u)==='venue'?'companies':'advertisers';
         $member=$type==='companies'?HPADS_Workflow::venue_member():HPADS_Workflow::advertiser_member();
         return $member && (bool)array_intersect(HPADS_Core::assigned($type),HPADS_Core::ids(get_user_meta($u->ID,'hpads_'.$type,true)));
@@ -24,11 +26,18 @@ final class HPADS_Teams {
         if (HPADS_Core::owner()) { return true; }
         if ($u->has_cap('hpads_owner') || user_can($u,'manage_options') || user_can($u,'edit_users') || user_can($u,'install_plugins')) { return false; }
         if (HPADS_Workflow::global_admin()) { return true; }
-        $family=self::family($u);
+        $family=self::family($u);if ($family==='designer') { return self::designer_in_scope($u,true); }
         if (($family==='venue' && !HPADS_Workflow::venue_admin()) || ($family==='advertiser' && !HPADS_Workflow::advertiser_admin()) || $family==='staff') { return false; }
         $type=$family==='venue'?'companies':'advertisers';
         $other=$family==='venue'?'advertisers':'companies';
         return !array_diff(HPADS_Core::ids(get_user_meta($u->ID,'hpads_'.$type,true)),HPADS_Core::assigned($type)) && !HPADS_Core::ids(get_user_meta($u->ID,'hpads_'.$other,true));
+    }
+    static function designer_in_scope($u,$strict=false) {
+        $own=HPADS_Workflow::venue_admin()?'companies':(HPADS_Workflow::advertiser_admin()?'advertisers':'');if (!$own) { return (int)$u->ID===get_current_user_id(); }
+        $other=$own==='companies'?'advertisers':'companies';$ids=HPADS_Core::ids(get_user_meta($u->ID,'hpads_'.$own,true));$locations=HPADS_Core::ids(get_user_meta($u->ID,'hpads_locations',true));
+        if ($own==='companies') { foreach ($locations as $lid) { $l=HPADS_Core::get($lid,'location');if ($l) { $ids[]=(int)$l['parent_id']; } } }
+        if (!$ids || !array_intersect($ids,HPADS_Core::assigned($own))) { return false; }
+        return !$strict || (!array_diff($ids,HPADS_Core::assigned($own)) && !HPADS_Core::ids(get_user_meta($u->ID,'hpads_'.$other,true)) && ($own==='companies' || !$locations));
     }
     static function all() {
         $users=[];
@@ -41,6 +50,7 @@ final class HPADS_Teams {
         $out=[];
         if (HPADS_Workflow::venue_admin()) { $out+=['hpads_venue_admin'=>'Venue Admin','hpads_venue_user'=>'Venue User']; }
         if (HPADS_Workflow::advertiser_admin()) { $out+=['hpads_advertiser_admin'=>'Advertiser Admin','hpads_advertiser_user'=>'Advertiser User']; }
+        if (self::can_manage()) { $out['hpads_designer']='Designer'; }
         return $out;
     }
     static function save($in) {
@@ -48,13 +58,17 @@ final class HPADS_Teams {
         if (!self::can_manage() || !isset(self::role_choices()[$role])) { return HPADS_Core::error('You cannot grant this role.',403); }
         $u=$id?get_user_by('id',$id):null;
         if ($id && (!$u || !self::can_edit($u))) { return HPADS_Core::error('You cannot edit this account.',403); }
-        $scopes=['companies'=>HPADS_Core::ids($in['companies'] ?? []),'advertisers'=>HPADS_Core::ids($in['advertisers'] ?? [])];
+        $scopes=['companies'=>HPADS_Core::ids($in['companies'] ?? []),'advertisers'=>HPADS_Core::ids($in['advertisers'] ?? []),'locations'=>HPADS_Core::ids($in['locations'] ?? [])];
+        if ($role==='hpads_designer' && !HPADS_Workflow::global_admin()) {
+            if (HPADS_Workflow::venue_admin() && ($scopes['advertisers'] || array_diff($scopes['companies'],HPADS_Core::assigned('companies'))) || HPADS_Workflow::advertiser_admin() && ($scopes['companies'] || $scopes['locations'] || array_diff($scopes['advertisers'],HPADS_Core::assigned('advertisers')))) { return HPADS_Core::error('Designer assignments must stay within your own team.',403); }
+        }
+        if ($role!=='hpads_designer' && $scopes['locations']) { return HPADS_Core::error('Location-only design assignments are for the Designer role.'); }
         $family=strpos($role,'hpads_venue')===0?'venue':(strpos($role,'hpads_advertiser')===0?'advertiser':'staff');
         if ($family==='venue' && (!$scopes['companies'] || $scopes['advertisers'])) { return HPADS_Core::error('Venue roles need venue memberships only.'); }
         if ($family==='advertiser' && (!$scopes['advertisers'] || $scopes['companies'])) { return HPADS_Core::error('Advertiser roles need advertiser memberships only.'); }
-        foreach (['companies'=>'company','advertisers'=>'advertiser'] as $key=>$kind) {
+        foreach (['companies'=>'company','advertisers'=>'advertiser','locations'=>'location'] as $key=>$kind) {
             foreach ($scopes[$key] as $sid) {
-                if (!HPADS_Core::get($sid,$kind) || (!HPADS_Workflow::global_admin() && !in_array($sid,HPADS_Core::assigned($key),true))) { return HPADS_Core::error('Membership is outside your team.',403); }
+                if (!HPADS_Core::get($sid,$kind) || (!HPADS_Workflow::global_admin() && !($key==='locations'?in_array((int)(HPADS_Core::get($sid,'location')['parent_id']??0),HPADS_Core::assigned('companies'),true):in_array($sid,HPADS_Core::assigned($key),true)))) { return HPADS_Core::error('Membership is outside your team.',403); }
             }
         }
         $name=sanitize_text_field($in['display_name'] ?? '');
@@ -100,7 +114,9 @@ final class HPADS_Teams {
         HPADS_Admin::select('Team role','hpads_role',self::role_choices(),$current);
         HPADS_Admin::multi('Venue memberships','companies',HPADS_Admin::choices('company'),$u?HPADS_Core::ids(get_user_meta($u->ID,'hpads_companies',true)):[]);
         HPADS_Admin::multi('Advertiser memberships','advertisers',HPADS_Admin::choices('advertiser'),$u?HPADS_Core::ids(get_user_meta($u->ID,'hpads_advertisers',true)):[]);
-        echo '<p>Venue roles use venue memberships; advertiser roles use advertiser memberships. Global HWADS roles do not need memberships.</p>';
+        HPADS_Admin::multi('Designer location assignments (optional)','locations',HPADS_Admin::choices('location'),$u?HPADS_Core::ids(get_user_meta($u->ID,'hpads_locations',true)):[]);
+        echo '<p>Designers can use venue, advertiser or individual location assignments. They edit content and submit revisions, but cannot manage playlists, approvals, devices or teams.</p>';
+        echo '<p>Venue roles use venue memberships; advertiser roles use advertiser memberships. SuperAdmin, HWADS Admin, Producer and Sales have global scopes. Account Managers need venue/advertiser memberships for their assigned work.</p>';
         HPADS_Admin::layout_close('Save User');echo '</form>';
     }
 }

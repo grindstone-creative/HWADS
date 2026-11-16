@@ -1,0 +1,9 @@
+# HWADS 0.11.0 / Pi 0.3.1 validation
+
+Build date: 2026-11-15. Extends the checks documented in VALIDATION-0.10.0.md.
+
+Passed: 23 PHP files syntax-checked; 44 native WordPress integration checks rerun; nine shared-layout integration assertions (published text isolation, layout updates, per-ad override, shortcode recursion and protected page exclusion); real WordPress template/placement editor save/reload, QR decimals, visual default isolation, native landing editor and new-template empty state. Playlist desktop/mobile regression checks passed. Headless browser checks verify decimal form submission, delayed overlay staging and grouped transition visibility. Offline player checks also verify a deliberately delayed logo keeps the slide hidden until ready, then crossfades and follows arrow navigation.
+
+No actual Divi theme or Raspberry Pi hardware is present in the test fixture. Confirm Divi 4.20.4 styling and actual TV rendering/scanning on the test site. No live deployment or GitHub push performed. The separate main-text editor and visibility checkboxes are implemented. Real WordPress browser checks verify Visual-editor submission, independent layout-body editing, unchecked state persistence, and publication to a custom landing layout without its title/media. Additional integration checks cover frozen main text/flags, template defaults, shared layouts and no effect on TV activation/QR.
+
+Landing-page main-text implementation: additional assertions verify independent rich text and layout persistence, unchecked visibility flags, frozen published text/flags, no effect on TV activation/QR, shortcode visibility, and template-copy defaults. Real WordPress browser testing exercises the Visual editor (not only a raw textarea) and checks the published custom layout after playlist Update. Use content/title/media shortcodes in custom layouts for the switches to control those elements; hand-added HTML or Divi modules remain explicitly authored content.

@@ -49,12 +49,16 @@ final class HPADS_Core {
         add_action('admin_notices',['HPADS_Post_Types','notice']);
         HPADS_Workflow::upgrade();
         HPADS_Placements::upgrade();
+        add_action('admin_init',['HPADS_Placements','upgrade_playlist_refs']);
         add_filter('wp_read_video_metadata', [__CLASS__,'video_rotation'], 10, 4);
+        add_action('admin_post_hpads_ad_review_preview',['HPADS_Preview','ad_route']);
+        add_action('admin_post_nopriv_hpads_ad_review_preview',['HPADS_Preview','ad_route']);
         add_action('admin_post_hpads_playlist_preview',['HPADS_Preview','route']);
         add_action('admin_post_nopriv_hpads_playlist_preview',['HPADS_Preview','route']);
         add_filter('ajax_query_attachments_args',['HPADS_Ads','media_query']);
         add_action('wp_ajax_hpads_template_upload',['HPADS_Placements','ajax_template']);
         add_action('template_redirect',['HPADS_Placements','public_page']);
+        add_action('template_redirect',['HPADS_Placements','front_preview'],0);
         add_action('admin_post_hpads_landing_preview',['HPADS_Placements','preview']);
         add_action('admin_post_nopriv_hpads_landing_preview',['HPADS_Placements','preview']);
         add_action('wp_ajax_hpads_playlist_create', ['HPADS_Placements','ajax_create']);
@@ -77,7 +81,7 @@ final class HPADS_Core {
         if (!is_array($value)) { $value = preg_split('/[\s,]+/', (string)$value, -1, PREG_SPLIT_NO_EMPTY); }
         return array_values(array_unique(array_filter(array_map('absint', $value))));
     }
-    static function assigned($type) { return self::ids(get_user_meta(get_current_user_id(), 'hpads_' . $type, true)); }
+    static function assigned($type) { return HPADS_View_As::assignments($type,self::ids(get_user_meta(get_current_user_id(), 'hpads_' . $type, true))); }
     static function get($id, $kind = '') {
         if (HPADS_Storage::active()) { return HPADS_Storage::get($id,$kind); }
         global $wpdb;
@@ -107,6 +111,13 @@ final class HPADS_Core {
     static function can($r, $write = false) {
         if (!$r || !current_user_can('hpads_access')) { return false; }
         if ($r['kind']==='creative' && !empty($r['data']['workflow'])) { return HPADS_Workflow::can_ad($r,$write); }
+        if (HPADS_Content_Access::designer()) {
+            if ($write) { return false; }
+            if (in_array($r['kind'],['company','advertiser'],true)) { return HPADS_Content_Access::owner_scope($r['kind'],$r['id']); }
+            if ($r['kind']==='location') { return HPADS_Content_Access::location_scope($r['id']); }
+            if ($r['kind']==='playlist') { return HPADS_Content_Access::location_scope($r['parent_id']); }
+            return false;
+        }
         if (HPADS_Workflow::global_staff()) {
             if (!$write) { return true; }
             if (HPADS_Workflow::global_admin()) { return true; }
@@ -157,6 +168,14 @@ final class HPADS_Core {
         if (!$wpdb->insert(self::table(),$values)) { return self::error('Database insert failed.'); }
         return (int)$wpdb->insert_id;
     }
+    // Display only: storage and native date inputs retain their machine formats.
+    static function display_datetime($value,$zone=false) {
+        $stamp=is_numeric($value)?(int)$value:strtotime($value.' UTC');
+        if ($stamp===false) { return ''; }
+        $format=get_option('date_format','F j, Y').' '.get_option('time_format','g:i a');
+        if ($zone && !preg_match('/(?<!\\\\)[TeOPZ]/',$format)) { $format.=' T'; }
+        return wp_date($format,$stamp);
+    }
     static function local_date($v) {
         if (trim((string)$v)==='') { return ''; }
         $d=DateTimeImmutable::createFromFormat('!Y-m-d\TH:i',(string)$v,wp_timezone());
@@ -168,11 +187,16 @@ final class HPADS_Core {
         $v=trim((string)$v);
         if (!$v) { return ''; }
         $d=DateTimeImmutable::createFromFormat('!Y-m-d\TH:i', $v, new DateTimeZone('UTC'));
-        if (!$d || $d->format('Y-m-d\TH:i')!==$v) { return self::error('Dates must be valid UTC dates.'); }
+        if (!$d || $d->format('Y-m-d\TH:i')!==$v) { return self::error('Enter a valid schedule date and time.'); }
         return $v;
     }
-    static function normalize_items($items,$location,$rotation_id=0) {
-        if (!is_array($items) || count($items)>250) { return self::error('A playlist supports up to 250 items.'); }
+    static function inherited_duration($ad) {
+        $playlist=self::get($ad['data']['rotation_id'] ?? 0,'playlist');
+        $location=$playlist?self::get($playlist['parent_id'],'location'):null;
+        return (int)($location['data']['duration'] ?? 10);
+    }
+    static function normalize_items($items,$location,$rotation_id=0,$resolved=false) {
+        if (!is_array($items) || count($items)>HPADS_Playlist_Limits::TOTAL) { return self::error('A playlist supports up to 100 placements, including inactive placements.'); }
         $out=[]; $seen=[];
         foreach ($items as $item) {
             if (!is_array($item)) { return self::error('Invalid playlist item.'); }
@@ -182,7 +206,7 @@ final class HPADS_Core {
             if (($c['data']['record_type'] ?? '')==='placement') {
                 if ((int)($c['data']['rotation_id'] ?? 0)!==(int)$rotation_id || !$rotation_id) { return self::error('This placement belongs to another rotation. Duplicate it instead of reusing the same entry.'); }
                 if (isset($seen[$c['id']])) { return self::error('Each rotation entry must be unique. Duplicate the placement for another slot.'); }
-                $item['duration']=$c['data']['duration'] ?? null; $item['start']=$c['data']['start'] ?? ''; $item['end']=$c['data']['end'] ?? ''; $item['active']=!empty($item['active']) && !empty($c['data']['active']);
+                $item['duration']=$c['data']['duration'] ?? null; $item['start']=$c['data']['start'] ?? ''; $item['end']=$c['data']['end'] ?? ''; $item['active']=!empty($c['data']['active']);
             }
             $seen[$c['id']]=true;
             if (!empty($c['data']['workflow']) && !in_array((int)$location['id'],$c['data']['locations'] ?? [],true)) { return self::error('Ad does not target this location.'); }
@@ -192,19 +216,21 @@ final class HPADS_Core {
             if (is_wp_error($start) || is_wp_error($end) || ($start && $end && $start >= $end)) { return self::error('Check item dates: end must be after start.'); }
             $duration=isset($item['duration']) && $item['duration']!=='' ? (int)$item['duration'] : null;
             if ($duration!==null && ($duration<1 || $duration>3600)) { return self::error('Image duration must be 1–3600 seconds, or empty for the location default.'); }
-            $out[]=['creative_id'=>(int)$c['id'],'duration'=>$duration,'active'=>!empty($item['active']),'start'=>$start,'end'=>$end];
+            $out[]=!$resolved && ($c['data']['record_type'] ?? '')==='placement'?['creative_id'=>(int)$c['id']]:['creative_id'=>(int)$c['id'],'duration'=>$duration,'active'=>!empty($item['active']),'start'=>$start,'end'=>$end];
         }
         return $out;
     }
-    static function publish($id) {
+    static function publish($id) { return HPADS_Playlist_Limits::locked($id,function() use($id){return self::publish_locked($id);}); }
+    private static function publish_locked($id) {
         global $wpdb;
-        $p=self::get($id,'playlist');
+        $p=HPADS_Playlist_Limits::fresh($id,'playlist');
         if (!$p || !self::can($p,true)) { return self::error('You cannot publish this playlist.',403); }
         $l=self::get($p['parent_id'],'location');
         if (!$l) { return self::error('Location is missing.'); }
-        $items=self::normalize_items($p['data']['items'] ?? [],$l,$p['id']);
+        $items=self::normalize_items($p['data']['items'] ?? [],$l,$p['id'],true);
         if (is_wp_error($items)) { return $items; }
-        $manifest=['schema'=>1,'playlist_id'=>(int)$id,'location_id'=>(int)$l['id'],'purpose'=>$p['data']['purpose'],'published_at'=>gmdate('c'),'timezone'=>'UTC','items'=>[]];
+        $limits=HPADS_Playlist_Limits::validate($p,$items);if (is_wp_error($limits)) { return $limits; }
+        $manifest=['schema'=>1,'playlist_id'=>(int)$id,'location_id'=>(int)$l['id'],'purpose'=>$p['data']['purpose'],'published_at'=>gmdate('c'),'timezone'=>'UTC','site_timezone'=>wp_timezone_string(),'items'=>[]];
         foreach ($items as $item) {
             if (!$item['active']) { continue; }
             $c=self::get($item['creative_id'],'creative');
@@ -220,8 +246,9 @@ final class HPADS_Core {
             if (!$hash) { return self::error('Unable to checksum media.'); }
             $url=self::snapshot($path,$mime,$hash);
             if (is_wp_error($url)) { return $url; }
+            $visuals=HPADS_Visuals::payload($c['data'],true);if (is_wp_error($visuals)) { return $visuals; }
             $video=strpos($mime,'video/')===0;
-            $manifest['items'][]=['creative_id'=>(int)$c['id'],'placement_id'=>($c['data']['record_type'] ?? '')==='placement'?(int)$c['id']:null,'placement_type'=>$c['data']['placement_type'] ?? null,'placement_revision'=>$c['data']['content_revision'] ?? null,'qr_enabled'=>!empty($c['data']['qr_enabled']),'transition_in'=>$c['data']['transition_in'] ?? 'none','transition_out'=>$c['data']['transition_out'] ?? 'none','attachment_id'=>(int)$aid,'title'=>$c['title'],'landing'=>['alt'=>$c['data']['media_alt'] ?? '', 'caption'=>$c['data']['caption'] ?? '', 'description'=>$c['data']['description'] ?? '', 'external_url'=>$c['data']['link_url'] ?? ''],'orientation'=>$c['data']['orientation'],'width'=>$geometry['width'],'height'=>$geometry['height'],'url'=>$url,'sha256'=>$hash,'bytes'=>filesize($path),'mime'=>$mime,'playback'=>$video?'full':'timed','duration_seconds'=>$video?null:($item['duration'] ?? (int)($l['data']['duration'] ?? 10)),'start_utc'=>$item['start'] ? $item['start'].':00Z' : null,'end_utc'=>$item['end'] ? $item['end'].':00Z' : null];
+            $manifest['items'][]=array_merge($visuals,['creative_id'=>(int)$c['id'],'placement_id'=>($c['data']['record_type'] ?? '')==='placement'?(int)$c['id']:null,'placement_type'=>$c['data']['placement_type'] ?? null,'placement_revision'=>$c['data']['content_revision'] ?? null,'qr_enabled'=>!empty($c['data']['qr_enabled']),'transition_in'=>$c['data']['transition_in'] ?? 'none','transition_out'=>$c['data']['transition_out'] ?? 'none','attachment_id'=>(int)$aid,'title'=>$c['title'],'landing'=>['custom_layout'=>!empty($c['data']['landing_layout_custom']),'main_text'=>$c['data']['landing_text'] ?? (get_post_meta(HPADS_Storage::post_id($c['id']),'_et_pb_use_builder',true)==='on'?'':($c['data']['description'] ?? '')),'show_ad'=>$c['data']['show_ad_on_page'] ?? true,'show_title'=>$c['data']['show_page_title'] ?? true,'divi_builder'=>HPADS_Divi::custom_layout($c['id']),'alt'=>$c['data']['media_alt'] ?? '', 'caption'=>$c['data']['caption'] ?? '', 'description'=>$c['data']['description'] ?? '', 'external_url'=>$c['data']['link_url'] ?? ''],'orientation'=>$c['data']['orientation'],'width'=>$geometry['width'],'height'=>$geometry['height'],'url'=>$url,'sha256'=>$hash,'bytes'=>filesize($path),'mime'=>$mime,'playback'=>$video?'full':'timed','duration_seconds'=>$video?null:($item['duration'] ?? (int)($l['data']['duration'] ?? 10)),'start_utc'=>$item['start'] ? $item['start'].':00Z' : null,'end_utc'=>$item['end'] ? $item['end'].':00Z' : null]);
         }
         // Insert a frozen snapshot, then compare-and-swap the current pointer. A competing edit rolls back both.
         $wpdb->query('START TRANSACTION');
@@ -275,7 +302,7 @@ final class HPADS_Core {
         if (!$v) { return null; }
         $m=json_decode($v['manifest'],true); $m['version_id']=(int)$v['id']; return $m;
     }
-    static function selected($device) {
+    static function selected($device,$include_mix=false) {
         $l=self::get($device['parent_id'],'location'); if (!$l) { return []; }
         $d=$device['data']; $out=[];
         foreach (['primary','house'] as $slot) {
@@ -285,6 +312,11 @@ final class HPADS_Core {
             $purpose=$slot==='house'?'house':'primary';
             $published=$p && !empty($p['data']['published_version'])?self::version($p['data']['published_version']):null;
             if ($p && (int)$p['parent_id']===(int)$l['id'] && $published && ($published['purpose'] ?? '')===$purpose) { $out[$slot]=(int)$p['data']['published_version']; }
+        }
+        if ($include_mix) {
+            $mix=HPADS_Playback_Mix::payload($device,$l);
+            foreach ($mix['groups'] ?? [] as $group) { if (!empty($group['manifest']['version_id'])) { $out['mix:'.$group['playlist_id']]=$group['manifest']['version_id']; } }
+            if (!empty($mix['fallback']['version_id'])) { $out['mix:fallback']=$mix['fallback']['version_id']; }
         }
         return $out;
     }

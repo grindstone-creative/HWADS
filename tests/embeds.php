@@ -18,13 +18,13 @@ echo 'EMBEDS: '.($checks-$embed_start)." checks passed; TOTAL: $checks checks pa
 wp_set_current_user(1);
 $_SERVER['REQUEST_METHOD']='GET';$_GET=['page'=>'hpads-dashboard'];$_REQUEST=$_GET;
 delete_user_meta(1,'hwads_dashboard_view');ob_start();HPADS_Admin::dashboard();$dashboard=ob_get_clean();
-ok(strpos($dashboard,'<h2>My Ad Placements</h2>')!==false && strpos($dashboard,'Device type')===false,'dashboard defaults to placements without device list');
-$_SERVER['REQUEST_METHOD']='POST';$_POST=['hwads_dashboard_view'=>'device','_wpnonce'=>wp_create_nonce('hwads_dashboard_preferences')];$_REQUEST=array_merge($_GET,$_POST);
+ok(strpos($dashboard,'aria-label="HWADS overview"')!==false && strpos($dashboard,'<h2>Venues</h2>')!==false && strpos($dashboard,'name="hwads_dashboard_view"')===false,'main dashboard shows scoped overview and venues without legacy list selector');
+update_user_meta(1,'hwads_dashboard_view','device');ob_start();HPADS_Admin::dashboard();$dashboard=ob_get_clean();
+ok(strpos($dashboard,'<h2>Venues</h2>')!==false && strpos($dashboard,'Device type')===false,'obsolete saved list preference cannot replace current dashboard');delete_user_meta(1,'hwads_dashboard_view');
+$outside=HPADS_Core::put('company','Unassigned dashboard venue',0,['active'=>true]);$scope_location=HPADS_Core::get($playlist['parent_id'],'location');$scope_venue=HPADS_Core::get($scope_location['parent_id'],'company');
+$dashboard_user=wp_create_user('dashboard_'.wp_generate_password(8,false,false),wp_generate_password(20));$dashboard_actor=new WP_User($dashboard_user);$dashboard_actor->set_role('hpads_venue_user');update_user_meta($dashboard_user,'hpads_companies',[$scope_venue['id']]);wp_set_current_user($dashboard_user);
 ob_start();HPADS_Admin::dashboard();$dashboard=ob_get_clean();
-ok(get_user_meta(1,'hwads_dashboard_view',true)==='device' && strpos($dashboard,'<h2>Devices</h2>')!==false,'dashboard choice saved to current user');
-wp_set_current_user(2);$_SERVER['REQUEST_METHOD']='GET';$_POST=[];$_REQUEST=$_GET;
-ob_start();HPADS_Admin::dashboard();$dashboard=ob_get_clean();
-ok(strpos($dashboard,'<h2>My Ad Placements</h2>')!==false,'dashboard preference is isolated per user');
+ok(strpos($dashboard,esc_html($scope_venue['title']))!==false && strpos($dashboard,'Unassigned dashboard venue')===false,'dashboard venue list excludes unassigned venues');
 wp_set_current_user(1);$_GET=[];$_POST=[];$_REQUEST=[];
 echo "DASHBOARD: 3 checks passed.\n";
 

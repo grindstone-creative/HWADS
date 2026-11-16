@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "updater_protocol": 1,
+  "version": "0.5.4",
+  "files": {
+    "hwads_sync.py": "a466cd5507fda4ccbfc04fcd8455eb43ad628bb20e1f6147d0cc212577537608",
+    "hwads_player.py": "36666af7596744496a8c8fd535f8d6d926de5959db292918aa07fc9befcdb0f3",
+    "hwads_browser.py": "ca06bbd2f90a35851a97abfec0ae0f7162f3c34488de263c5d996c719e8ea55c",
+    "hwads_launch.py": "3dab9185f96116db38518b2881cb6fbfe4fcd37a757b7267bea4e97b0eebceed",
+    "hwads-control.py": "68fe71c922d30c3b62b8e104068eb1c2e5a1e0746dd28183d830e8ccdbbe7591",
+    "hwads_update.py": "cb079d2a8acadc77cc57bc8d22e1e662cd361f9cfbf41cf615d10ee5d4cfadbc",
+    "browser/index.html": "d0cbea14f80c47f9e3509e547a7575ffb37314c0f24da0ef282cb2a4920f571b",
+    "browser/player.js": "1cc7b6bad465411b1534883db69d4b376b46e2d1fcdfff9cb22cdedfba2cdad4",
+    "browser/player.css": "6f058c0e094266cda6b1af44887fe544d6993542614703f09655fcd8d45f81f0",
+    "browser/overlays.js": "880d2538fc7b11566b0dde34f30babea61aaad985808191efc81e5f5c3775de1",
+    "browser/overlays.css": "1e5b8936104519e4d85a8eaa70ce61574222530c83750e7fe5cfe3c4fa7f293f",
+    "browser/vendor/qrcodegen.js": "53a7ffe63877d211691729fdea5b38f69156e69f47f0bd9dc38cfbcc8a8afd92"
+  }
+}

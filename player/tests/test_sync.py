@@ -96,4 +96,23 @@ class SyncTests(unittest.TestCase):
             self.client.heartbeat()
             self.assertEqual(json.loads(api.call_args.args[2])['active_version'],4)
 
+    def test_overlay_download_is_verified_and_atomic(self):
+        self.complete();before=self.client.active_path.read_bytes()
+        overlay=dict(self.item,type='image',bytes=4,sha256=hashlib.sha256(b'logo').hexdigest(),url='https://cdn.test/logo.jpg',x=5,y=5,width=20)
+        self.item['overlays']=[overlay,{'type':'text','text':'Special','x':5,'y':5,'width':40,'size':4}]
+        with patch.object(sync,'request',return_value=(self.payload,'new')),patch.object(sync.OPENER,'open',return_value=Response(b'bad!')):
+            with self.assertRaises(ValueError):self.client.sync()
+        self.assertEqual(before,self.client.active_path.read_bytes())
+        with patch.object(sync,'request',return_value=(self.payload,'new')),patch.object(sync.OPENER,'open',return_value=Response(b'logo')):
+            self.client.sync()
+        data=json.loads(self.client.active_path.read_text())['primary'][0]
+        self.assertTrue((self.client.media/data['overlays'][0]['file']).is_file())
+        self.assertNotIn('url',data['overlays'][0]);self.assertEqual(data['overlays'][1]['text'],'Special')
+
+    def test_overlay_purge_preserves_active_assets(self):
+        self.complete();logo=self.client.media/'logo.png';logo.write_bytes(b'logo')
+        data=json.loads(self.client.active_path.read_text());data['primary'][0]['overlays']=[{'type':'image','file':'logo.png'}];sync.atomic_json(self.client.active_path,data)
+        import os
+        os.utime(logo,(0,0));self.client.purge();self.assertTrue(logo.exists())
+
 if __name__=='__main__':unittest.main()

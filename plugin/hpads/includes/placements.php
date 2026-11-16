@@ -28,18 +28,20 @@ final class HPADS_Placements {
     }
     static function create_in_playlist($in) {
         $p=HPADS_Core::get(absint($in['rotation_id'] ?? 0),'playlist');
-        if (!$p || !HPADS_Core::can($p,true)) { return HPADS_Core::error('Playlist unavailable.',403); }
+        if (!$p || (!HPADS_Core::can($p,true) && !(HPADS_Content_Access::designer() && HPADS_Content_Access::location_scope($p['parent_id'])))) { return HPADS_Core::error('Playlist unavailable.',403); }
+        $room=HPADS_Playlist_Limits::room($p);if (is_wp_error($room)) { return $room; }
         if (!empty($in['source_id'])) {
             $source=HPADS_Core::get(absint($in['source_id']),'creative');
             if (!$source || !HPADS_Workflow::can_ad($source)) { return HPADS_Core::error('Source unavailable.',403); }
-            return self::copy($source,'placement',$p['id']);
+            if (self::is_template($source) && !HPADS_Content_Access::grant($source) && !HPADS_Venue_Workspace::group($source,HPADS_Core::get($p['parent_id'],'location'))) { return HPADS_Core::error('Template is not available at this location. Copy it to this venue or location first.',403); }
+            return self::copy($source,'placement',$p['id'],'',sanitize_text_field($in['owner']??''));
         }
-        $in['record_type']='placement'; $in['id']=0; $in['active']=1;
+        $in['record_type']='placement'; $in['id']=0; $in['active']=HPADS_Playlist_Limits::new_active($p);
         return self::save($in);
     }
     static function card($id) {
         $r=HPADS_Core::get($id,'creative'); $d=$r['data'];
-        return ['id'=>(int)$id,'title'=>$r['title'],'preview'=>wp_get_attachment_url($d['attachment_id']),'video'=>strpos((string)get_post_mime_type($d['attachment_id']),'video/')===0,'edit'=>HPADS_Admin::url('creative',$id),'duration'=>$d['duration'] ?? '', 'start'=>HPADS_Core::local_value($d['start'] ?? ''), 'end'=>HPADS_Core::local_value($d['end'] ?? ''),'link_url'=>$d['link_url'] ?? '', 'qr_enabled'=>!empty($d['qr_enabled']),'transition_in'=>$d['transition_in'] ?? 'none','transition_out'=>$d['transition_out'] ?? 'none','revision'=>(int)$r['revision'],'template_edit'=>!empty($d['source_template_id'])?HPADS_Admin::url('templates',$d['source_template_id']):''];
+        return array_merge(HPADS_Visuals::payload($d),['width'=>$d['width'] ?? 1920,'height'=>$d['height'] ?? 1080,'qr_url'=>self::public_url($id),'active'=>!empty($d['active']),'id'=>(int)$id,'title'=>$r['title'],'preview'=>wp_get_attachment_url($d['attachment_id']),'video'=>strpos((string)get_post_mime_type($d['attachment_id']),'video/')===0,'edit'=>HPADS_Admin::url('creative',$id),'duration'=>$d['duration'] ?? '', 'start'=>HPADS_Core::local_value($d['start'] ?? ''), 'end'=>HPADS_Core::local_value($d['end'] ?? ''),'link_url'=>$d['link_url'] ?? '', 'qr_enabled'=>!empty($d['qr_enabled']),'transition_in'=>$d['transition_in'] ?? 'none','transition_out'=>$d['transition_out'] ?? 'none','revision'=>(int)$r['revision'],'template_edit'=>!empty($d['source_template_id'])?HPADS_Admin::url('templates',$d['source_template_id']):'']);
     }
     static function ajax_create() {
         check_ajax_referer('hpads_playlist_create','nonce');
@@ -70,33 +72,45 @@ final class HPADS_Placements {
         if (!$item) { status_header(404);nocache_headers();wp_die('This ad is not published.','HWADS',['response'=>404]); }
         status_header(200); header('Content-Type: text/html; charset=UTF-8');header('X-Robots-Tag: noindex, follow');
         $d=$item['landing'] ?? [];
-        echo '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'.esc_html($item['title']).'</title><style>body{font:18px/1.5 system-ui;max-width:900px;margin:30px auto;padding:0 20px}img,video{max-width:100%;height:auto}a{color:#17558a}</style></head><body><h1>'.esc_html($item['title']).'</h1>';
-        if (strpos($item['mime'],'video/')===0) { echo '<video controls src="'.esc_url($item['url']).'"></video>'; }
-        else { echo '<img src="'.esc_url($item['url']).'" alt="'.esc_attr($d['alt'] ?? '').'">'; }
-        if (!empty($d['caption'])) { echo '<p>'.esc_html($d['caption']).'</p>'; }
-        echo wp_kses_post($d['description'] ?? '');
+        if (HPADS_Landing_Layout::render($item)) { exit; }
+        $pid=HPADS_Storage::post_id($item['placement_id']);$GLOBALS['post']=get_post($pid);if ($GLOBALS['post']) { $GLOBALS['post']=clone $GLOBALS['post'];$GLOBALS['post']->post_content=$d['description'] ?? '';setup_postdata($GLOBALS['post']); }
+        if (HPADS_Divi::available() && !empty($d['divi_builder'])) { get_header();echo '<div id="main-content"><div class="entry-content">'.HPADS_Divi::render($d['description'] ?? '',$item['placement_id']).'</div></div>';get_footer();exit; }
+        echo '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'.esc_html($item['title']).'</title><style>body{font:18px/1.5 system-ui;max-width:900px;margin:30px auto;padding:0 20px}img,video{max-width:100%;height:auto}a{color:#17558a}</style>';wp_head();echo '</head><body>';if ($d['show_title'] ?? true) { echo '<h1>'.esc_html($item['title']).'</h1>'; }echo '';
+        if (($d['show_ad'] ?? true) && strpos($item['mime'],'video/')===0) { echo '<video controls src="'.esc_url($item['url']).'"></video>'; }
+        elseif ($d['show_ad'] ?? true) { echo '<img src="'.esc_url($item['url']).'" alt="'.esc_attr($d['alt'] ?? '').'">'; }
+        if (($d['show_ad'] ?? $d['show_ad_on_page'] ?? true) && !empty($d['caption'])) { echo '<p>'.esc_html($d['caption']).'</p>'; }
+        echo wpautop(wp_kses_post($d['main_text'] ?? $d['description'] ?? ''));
         if (!empty($d['external_url'])) { echo '<p><a rel="noopener noreferrer" href="'.esc_url($d['external_url']).'">Visit website</a></p>'; }
-        echo '</body></html>';exit;
+        wp_footer();echo '</body></html>';exit;
     }
-    static function preview_url($id) { return add_query_arg(['action'=>'hpads_landing_preview','id'=>(int)$id],admin_url('admin-post.php')); }
-    static function preview() {
-        $r=HPADS_Core::get(absint($_GET['id'] ?? 0),'creative');
+    static function preview_url($id) { return add_query_arg('hwads_landing_preview',(int)$id,home_url('/')); }
+    static function front_preview() {
+        if (!isset($_GET['hwads_landing_preview'])) { return; }
+        self::preview_record(absint($_GET['hwads_landing_preview']));
+    }
+    static function preview() { self::preview_record(absint($_GET['id'] ?? 0)); }
+    static function preview_record($id) {
+        $r=HPADS_Core::get(absint($id),'creative');
         if (!$r || !is_user_logged_in() || !HPADS_Workflow::can_ad($r)) { wp_die('Preview unavailable.','HWADS',['response'=>403]); }
         nocache_headers();header('Cache-Control: private, no-store');header('X-Robots-Tag: noindex, nofollow');header('Referrer-Policy: no-referrer');
+        // Legacy admin-post links authenticate here, then use a real front-end theme request.
+        if (is_admin()) { wp_safe_redirect(self::preview_url($r['id']));exit; }
+        status_header(200);header('Content-Type: text/html; charset=UTF-8');
         $d=$r['data'];$url=wp_get_attachment_url($d['attachment_id']);
-        echo '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'.esc_html($r['title']).'</title><style>body{font:18px/1.5 system-ui;max-width:900px;margin:30px auto;padding:0 20px}img,video{max-width:100%;height:auto}aside{background:#f0f6fc;padding:14px}a{color:#17558a}</style></head><body><aside>Private draft preview · Engagement tracking is not enabled yet.</aside><h1>'.esc_html($r['title']).'</h1>';
-        if (strpos((string)get_post_mime_type($d['attachment_id']),'video/')===0) { echo '<video controls src="'.esc_url($url).'"></video>'; }
-        else { echo '<img src="'.esc_url($url).'" alt="'.esc_attr($d['media_alt'] ?? '').'">'; }
-        if (!empty($d['caption'])) { echo '<p>'.esc_html($d['caption']).'</p>'; }
-        echo wp_kses_post($d['description'] ?? '');
+        if (HPADS_Landing_Layout::render(HPADS_Landing_Layout::draft_item($r))) { exit; }
+        echo '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'.esc_html($r['title']).'</title><style>body{font:18px/1.5 system-ui;max-width:900px;margin:30px auto;padding:0 20px}img,video{max-width:100%;height:auto}aside{background:#f0f6fc;padding:14px}a{color:#17558a}</style></head><body><aside>Private draft preview · Engagement tracking is not enabled yet.</aside>';if ($d['show_page_title'] ?? true) { echo '<h1>'.esc_html($r['title']).'</h1>'; }echo '';
+        if (($d['show_ad_on_page'] ?? true) && strpos((string)get_post_mime_type($d['attachment_id']),'video/')===0) { echo '<video controls src="'.esc_url($url).'"></video>'; }
+        elseif ($d['show_ad_on_page'] ?? true) { echo '<img src="'.esc_url($url).'" alt="'.esc_attr($d['media_alt'] ?? '').'">'; }
+        if (($d['show_ad'] ?? $d['show_ad_on_page'] ?? true) && !empty($d['caption'])) { echo '<p>'.esc_html($d['caption']).'</p>'; }
+        echo wpautop(wp_kses_post($d['landing_text'] ?? $d['description'] ?? ''));
         if (!empty($d['link_url'])) { echo '<p><a rel="noopener noreferrer" href="'.esc_url($d['link_url']).'">Visit website</a></p>'; }
         echo '</body></html>';exit;
     }
     static function template_upload_panel() {
         $owners=HPADS_Ads::owners(true);if (!$owners) { return; }
-        echo '<div class="hpads-template-upload"><h2>Upload new ad templates</h2><label>Owner <select id="hpads-template-owner">';
+        echo '<section class="hpads-template-upload hpads-upload-panel" aria-labelledby="hpads-template-upload-heading"><h2 id="hpads-template-upload-heading">Upload new ad templates</h2><div class="hpads-upload-fields"><p><label for="hpads-template-owner">Owner for new uploads</label><select id="hpads-template-owner">';
         foreach ($owners as $key=>$label) { echo '<option value="'.esc_attr($key).'">'.esc_html($label).'</option>'; }
-        echo '</select></label> <label>Orientation <select id="hpads-template-orientation"><option value="auto">Detect from file</option><option value="horizontal">Horizontal</option><option value="vertical">Vertical</option></select></label><div id="hpads-template-drop" tabindex="0" role="button" aria-label="Upload media to create ad templates">Drop images or videos here, or click to choose files</div><input type="file" id="hpads-template-files" multiple hidden accept="image/jpeg,image/png,image/webp,video/mp4,video/webm" data-max-bytes="'.esc_attr(wp_max_upload_size()).'"><p id="hpads-template-upload-status" role="status"></p><ul id="hpads-template-upload-results"></ul><p class="description">One template per file. Templates are saved immediately and are not added to a playlist. Server maximum: '.esc_html(size_format(wp_max_upload_size())).'.</p></div>';
+        echo '</select></p><p><label for="hpads-template-orientation">Orientation</label><select id="hpads-template-orientation"><option value="auto">Detect from file</option><option value="horizontal">Horizontal</option><option value="vertical">Vertical</option></select></p></div><div class="hpads-upload-drop" id="hpads-template-drop" tabindex="0" role="button" aria-label="Upload media to create ad templates">Drop images or videos here, or click to choose files</div><input type="file" id="hpads-template-files" multiple hidden accept="image/jpeg,image/png,image/webp,video/mp4,video/webm" data-max-bytes="'.esc_attr(wp_max_upload_size()).'"><p id="hpads-template-upload-status" role="status"></p><ul id="hpads-template-upload-results"></ul><p class="description">One template per file. Templates are saved immediately and are not added to a playlist. Server maximum: '.esc_html(size_format(wp_max_upload_size())).'.</p></section>';
     }
     static function time_state($ad) {
         $d=$ad['data']; $now=gmdate('Y-m-d\TH:i');
@@ -106,13 +120,14 @@ final class HPADS_Placements {
     }
     static function can_bind($type,$oid,$rotation) {
         if (!$rotation || $rotation['kind']!=='playlist' || !self::author_owner($type,$oid)) { return false; }
+        if (HPADS_Content_Access::designer() && !HPADS_Content_Access::location_scope($rotation['parent_id'])) { return false; }
         if (self::manager() && !HPADS_Workflow::production() && !self::managed_location($rotation['parent_id'])) { return false; }
         $eligible=array_map(function($l){return (int)$l['id'];},HPADS_Workflow::eligible_locations($type,$oid));
         if (!in_array((int)$rotation['parent_id'],$eligible,true)) { return false; }
         if (($rotation['data']['purpose'] ?? '')==='house') {
             if ($type!=='company') { return false; }
             $l=HPADS_Core::get($rotation['parent_id'],'location');
-            return HPADS_Workflow::production() || ((HPADS_Workflow::venue_admin() || current_user_can('hpads_admin') || current_user_can('hpads_account_manager')) && !empty($l['data']['allow_house']));
+            return HPADS_Workflow::production() || HPADS_Content_Access::designer() || ((HPADS_Workflow::venue_admin() || current_user_can('hpads_admin') || current_user_can('hpads_account_manager')) && !empty($l['data']['allow_house']));
         }
         return true;
     }
@@ -131,24 +146,33 @@ final class HPADS_Placements {
     static function fresh_data($source,$mode,$rotation=null) {
         $d=$source['data'];
         // Copy authored content/media, not destination-specific state or approval history.
-        foreach (['reviews','manager_review','review_history','approved_locations','submitted_at','submitted_by','submission_revision','published_version','invoice_id','billed_at','billing_history','rotation_id','locations','target_mode','start','end','active','copied_from','source_template_id'] as $key) { unset($d[$key]); }
+        foreach (['approval_override','reviews','manager_review','review_history','approved_locations','submitted_at','submitted_by','submission_revision','published_version','invoice_id','billed_at','billing_history','rotation_id','locations','target_mode','start','end','active','copied_from','source_template_id'] as $key) { unset($d[$key]); }
         $d['record_type']=$mode; $d['qr_enabled']=!empty($d['qr_enabled']); $d['workflow']=2; $d['state']='draft'; $d['content_revision']=1;
         $d['submission_revision']=0; $d['reviews']=[]; $d['manager_review']=[]; $d['approved_locations']=[]; $d['review_history']=[];
         $d['rotation_id']=$rotation?(int)$rotation['id']:0; $d['locations']=$rotation?[(int)$rotation['parent_id']]:[]; $d['location_id']=0;
         $d['target_mode']='selected'; $d['start']=''; $d['end']=''; $d['active']=true; $d['created_by']=get_current_user_id();
         $d['copied_from']=(int)$source['id'];
         if (self::is_template($source)) { $d['source_template_id']=(int)$source['id']; }
-        return $d;
+        return HPADS_Approvals::authored($d);
     }
-    static function copy($source,$mode,$rotation_id=0,$title='') {
-        if (!(HPADS_Workflow::can_ad($source,true) || (self::is_template($source) && HPADS_Workflow::can_ad($source))) || !in_array($mode,['placement','template'],true)) { return HPADS_Core::error('You cannot copy this entry.',403); }
-        [$type,$oid]=HPADS_Workflow::owner_ref($source); $rotation=null;
+    static function copy($source,$mode,$rotation_id=0,$title='',$new_owner='') {
+        if (HPADS_View_As::state()) { return HPADS_Core::error('Exit role preview before making a copy.',403); }
+        if (!(HPADS_Workflow::can_ad($source,true) || (self::is_template($source) && HPADS_Workflow::can_ad($source)) || HPADS_Content_Access::grant($source)) || !in_array($mode,['placement','template'],true)) { return HPADS_Core::error('You cannot copy this entry.',403); }
+        [$type,$oid]=HPADS_Workflow::owner_ref($source);$original=[$type,$oid];
+        if ($new_owner!=='') { $ref=explode(':',$new_owner);if(count($ref)!==2||!in_array($ref[0],['company','advertiser'],true)){return HPADS_Core::error('Choose an owner for the independent copy.');}$type=$ref[0];$oid=absint($ref[1]); }
+        if (!self::author_owner($type,$oid)) { return HPADS_Core::error('Choose your own authorized owner for this copy.',403); }
+        if ($original!==[$type,(int)$oid] && !HPADS_Content_Access::grant($source) && !HPADS_Workflow::production() && !self::manager()) { return HPADS_Core::error('This source is not shared for cross-owner copying.',403); }
+        $rotation=null;
         if ($mode==='placement') {
             $rotation=HPADS_Core::get($rotation_id,'playlist');
             if (!self::can_bind($type,$oid,$rotation)) { return HPADS_Core::error('Choose an eligible playlist. Each copy must have its own destination.',403); }
         }
-        $d=self::fresh_data($source,$mode,$rotation);
-        return HPADS_Core::put('creative',$title?:$source['title'].($mode==='template'?' — Template':' — Copy'),$type==='advertiser'?$oid:0,$d);
+        if ($rotation) { $room=HPADS_Playlist_Limits::room($rotation);if (is_wp_error($room)) { return $room; } }
+        $d=self::fresh_data($source,$mode,$rotation);$d['owner_type']=$type;$d['owner_id']=(int)$oid;
+        if ($original!==[$type,(int)$oid]) { foreach(['template_scope','template_venue','template_location','template_user'] as $key){unset($d[$key]);}$d['template_scope']=$type==='company'?'venue':'personal';$d['template_venue']=$type==='company'?(int)$oid:0;$d['template_user']=get_current_user_id(); }
+        if (HPADS_Content_Access::designer() && $mode==='template' && $type==='company' && !in_array((int)$oid,HPADS_Core::assigned('companies'),true)) { foreach(HPADS_Core::assigned('locations') as $lid){$l=HPADS_Core::get($lid,'location');if($l && (int)$l['parent_id']===(int)$oid){$d['template_scope']='location';$d['template_location']=$lid;$d['template_venue']=$oid;break;}} }
+        if ($rotation) { $d['active']=HPADS_Playlist_Limits::new_active($rotation); }
+        $result=HPADS_Core::put('creative',$title?:$source['title'].($mode==='template'?' — Template':' — Copy'),$type==='advertiser'?$oid:0,$d);if (!is_wp_error($result)) { HPADS_Divi::copy_meta($source['id'],$result); }return $result;
     }
     static function prepare($in,$r) {
         $mode=sanitize_key($in['record_type'] ?? 'placement');
@@ -156,15 +180,17 @@ final class HPADS_Placements {
         $source_id=absint($in['source_template_id'] ?? 0); $source=null;
         if (!$r && $source_id) { $source=self::source($source_id); if (!$source) { return HPADS_Core::error('Template is unavailable.',403); } }
         $ref=explode(':',sanitize_text_field($in['owner'] ?? ''));
-        if (count($ref)!==2 || !in_array($ref[0],['company','advertiser'],true) || !HPADS_Core::get(absint($ref[1]),$ref[0]) || !self::author_owner($ref[0],absint($ref[1]))) { return HPADS_Core::error('Select an owner available for a property you manage.',403); }
+        if (count($ref)!==2 || !in_array($ref[0],['company','advertiser'],true) || !HPADS_Core::get(absint($ref[1]),$ref[0]) || (!self::author_owner($ref[0],absint($ref[1])) && !($r && HPADS_Content_Access::grant($r,true) && [$ref[0],absint($ref[1])]===HPADS_Workflow::owner_ref($r)))) { return HPADS_Core::error('Select an owner available for a property you manage.',403); }
         $ref=[$ref[0],absint($ref[1])];
         if (($r||$source) && $ref!==HPADS_Workflow::owner_ref($r?:$source) && !(HPADS_Workflow::production() || self::manager())) { return HPADS_Core::error('Owner changes require an authorized HWADS manager.',403); }
         [$type,$oid]=$ref; $rotation=null;
         if ($mode==='placement') {
             $rotation=HPADS_Core::get(absint($in['rotation_id'] ?? 0),'playlist');
-            if (!self::can_bind($type,$oid,$rotation)) { return HPADS_Core::error('Choose a playlist at a location connected to this owner.',403); }
+            if (!self::can_bind($type,$oid,$rotation) && !($r && $rotation && (int)($r['data']['rotation_id']??0)===(int)$rotation['id'] && HPADS_Content_Access::grant($r,true))) { return HPADS_Core::error('Choose a playlist at a location connected to this owner.',403); }
             if ($r && (int)($r['data']['rotation_id'] ?? 0)!==(int)$rotation['id']) { return HPADS_Core::error('This placement belongs to one playlist. Duplicate it to create an independent entry elsewhere.'); }
         }
+        $limited=$r && (HPADS_Content_Access::designer() || (!self::author_owner($type,$oid) && HPADS_Content_Access::grant($r,true)));
+        if ($limited) { foreach(['duration','active','start','end'] as $key){$in[$key]=$r['data'][$key]??($key==='active'?true:($key==='duration'?null:''));}$in['_local_dates']=0; }
         $date_method=!empty($in['_local_dates'])?'local_date':'date';$start=HPADS_Core::$date_method($in['start'] ?? ''); $end=HPADS_Core::$date_method($in['end'] ?? '');
         if (is_wp_error($start) || is_wp_error($end) || ($start && $end && $start>=$end)) { return HPADS_Core::error('Check the schedule: end must be after start.'); }
         $duration=isset($in['duration']) && $in['duration']!==''?(int)$in['duration']:null;
@@ -180,17 +206,45 @@ final class HPADS_Placements {
         if (!isset(self::TYPES[$placement_type])) { return HPADS_Core::error('Invalid placement type.'); }
         $d['placement_type']=$placement_type; $d['media_alt']=sanitize_text_field($in['media_alt'] ?? ''); $d['caption']=sanitize_textarea_field($in['caption'] ?? '');
         foreach (['transition_in','transition_out'] as $key) { $value=sanitize_key($in[$key] ?? 'none');if (!isset(self::TRANSITIONS[$value])) { return HPADS_Core::error('Invalid transition.'); }$d[$key]=$value; }
+        if (!empty($in['landing_options']) && $r && ($in['description'] ?? '')!==($r['data']['description'] ?? '')) { $d['landing_layout_custom']=true; }
+        if (array_key_exists('landing_text',$in)) { $d['landing_text']=wp_kses_post($in['landing_text']); }
+        if (!empty($in['landing_options'])) { $d['show_ad_on_page']=!empty($in['show_ad_on_page']);$d['show_page_title']=!empty($in['show_page_title']); }
         $d['qr_enabled']=!empty($in['qr_enabled']); $d['description']=wp_kses_post($in['description'] ?? ''); $d['link_url']=esc_url_raw($in['link_url'] ?? '',['http','https']);
+        $visuals=HPADS_Visuals::normalize($in['overlays'] ?? ($d['overlays'] ?? []),$type,$oid,$r);
+        if (is_wp_error($visuals)) { return $visuals; }
+        $d['overlays']=$visuals;$d['qr_layout']=HPADS_Visuals::qr($in['qr_layout'] ?? ($d['qr_layout'] ?? []));$d['qr_layout']['y']=min($d['qr_layout']['y'],max(0,100-$d['qr_layout']['size']*($d['width'] ?? 1920)/max(1,$d['height'] ?? 1080)));
+        $d['thumbnail_time']=HPADS_Visuals::number($in['thumbnail_time'] ?? ($d['thumbnail_time'] ?? 1),0,86400,1);
         if (!$r && $source) { $d['source_template_id']=(int)$source['id']; }
-        return ['title'=>sanitize_text_field($in['title'] ?? ''),'parent'=>$type==='advertiser'?$oid:0,'data'=>$d];
+        if ($mode==='template') { $scope=$limited?array_intersect_key($r['data'],array_flip(['template_scope','template_venue','template_location','template_user'])):HPADS_Venue_Workspace::scope_input($in,$r['data'] ?? [],$type,$oid);if (is_wp_error($scope)) { return $scope; }$d=array_merge($d,$scope); }
+        return ['title'=>sanitize_text_field($in['title'] ?? ''),'parent'=>$type==='advertiser'?$oid:0,'data'=>HPADS_Approvals::authored($d,$r,sanitize_text_field($in['title'] ?? ''))];
     }
+    static function upgrade_playlist_refs() {
+        if (get_option('hwads_playlist_refs_schema')==='1' || !HPADS_Workflow::global_admin() || HPADS_View_As::state()) { return; }
+        foreach (HPADS_Core::entity_ids('playlist') as $id) {
+            $p=HPADS_Core::get($id,'playlist');$d=$p['data'];$changed=false;
+            foreach ($d['items'] ?? [] as $i=>$item) {
+                $ad=HPADS_Core::get($item['creative_id'] ?? 0,'creative');
+                if (($ad['data']['record_type'] ?? '')==='placement') {
+                    $ref=['creative_id'=>(int)$ad['id']];
+                    if ($item!==$ref) { $d['items'][$i]=$ref;$changed=true; }
+                }
+            }
+            if ($changed && is_wp_error(HPADS_Core::put('playlist',$p['title'],$p['parent_id'],$d,$p['id'],$p['revision']))) { return; }
+        }
+        update_option('hwads_playlist_refs_schema','1',false);
+    }
+    static $batch_playlist=0;
     static function save_playlist($r,$in) {
+        return HPADS_Playlist_Limits::locked($r['id'],function() use($r,$in){$prior=self::$batch_playlist;self::$batch_playlist=(int)$r['id'];try { return self::save_playlist_batch($r,$in); } finally { self::$batch_playlist=$prior; }});
+    }
+    private static function save_playlist_batch($r,$in) {
         global $wpdb;
         if (!HPADS_Core::can($r,true) || (int)($in['revision'] ?? 0)!==(int)$r['revision']) { return HPADS_Core::error('Playlist unavailable or changed. Reload before saving.'); }
         if ((int)($in['parent_id'] ?? 0)!==(int)$r['parent_id']) { return HPADS_Core::error('The playlist location cannot be changed.'); }
         $purpose=sanitize_key($in['purpose'] ?? 'primary');$candidate=$r;$candidate['data']['purpose']=$purpose;
         if (!in_array($purpose,['primary','house'],true) || !HPADS_Core::can($candidate,true)) { return HPADS_Core::error('You cannot use this playlist purpose.'); }
-        $items=json_decode($in['items'] ?? '[]',true);if (!is_array($items) || count($items)>250) { return HPADS_Core::error('A playlist supports up to 250 placements.'); }
+        $items=json_decode($in['items'] ?? '[]',true);if (!is_array($items) || count($items)>HPADS_Playlist_Limits::TOTAL) { return HPADS_Core::error('A playlist supports up to 100 placements, including inactive placements.'); }
+        $settings=HPADS_Playlist_Limits::settings($in,$r['data']);if (is_wp_error($settings)) { return $settings; }
         $wpdb->query('START TRANSACTION');$seen=[];
         $rollback=function() use (&$seen,$wpdb) { $wpdb->query('ROLLBACK');foreach (array_keys($seen) as $id) { $pid=HPADS_Storage::post_id($id);if ($pid) { clean_post_cache($pid); } } };
         foreach ($items as $item) {
@@ -205,7 +259,8 @@ final class HPADS_Placements {
         }
         $items=HPADS_Core::normalize_items($items,HPADS_Core::get($r['parent_id'],'location'),$r['id']);
         if (is_wp_error($items)) { $rollback();return $items; }
-        $d=$r['data'];$d['items']=$items;$d['purpose']=$purpose;if (isset($in['description'])) { $d['description']=wp_kses_post($in['description']); }
+        $d=$r['data'];$d['items']=$items;$d['purpose']=$purpose;$d=array_merge($d,$settings);
+        $candidate=$r;$candidate['data']=$d;$limits=HPADS_Playlist_Limits::validate($candidate);if (is_wp_error($limits)) { $rollback();return $limits; }if (isset($in['description'])) { $d['description']=wp_kses_post($in['description']); }
         $saved=HPADS_Core::put('playlist',sanitize_text_field($in['title'] ?? $r['title']),$r['parent_id'],$d,$r['id'],$r['revision']);
         if (is_wp_error($saved)) { $rollback();return $saved; }$wpdb->query('COMMIT');return $saved;
     }
@@ -215,7 +270,11 @@ final class HPADS_Placements {
         if ($r && (int)($in['revision'] ?? 0)!==(int)$r['revision']) { return HPADS_Core::error('This entry changed. Reload before saving.'); }
         $title=sanitize_text_field($in['title'] ?? ''); if (!$title || strlen($title)>200) { return HPADS_Core::error('Enter a name of no more than 200 bytes.'); }
         $values=self::prepare($in,$r); if (is_wp_error($values)) { return $values; }
-        $result=HPADS_Core::put('creative',$title,$values['parent'],$values['data'],$id,(int)($r['revision'] ?? 0));
+        $result=HPADS_Playlist_Limits::locked($values['data']['rotation_id'] ?? 0,function() use($title,$values,$id,$r){
+            if (self::$batch_playlist!==(int)($values['data']['rotation_id'] ?? 0)) { $limits=HPADS_Playlist_Limits::placement($id,$values['data']);if (is_wp_error($limits)) { return $limits; } }
+            return HPADS_Core::put('creative',$title,$values['parent'],$values['data'],$id,(int)($r['revision'] ?? 0));
+        });
+        if (!is_wp_error($result) && !$r && !empty($in['source_template_id'])) { HPADS_Divi::copy_meta(absint($in['source_template_id']),$result); }
         if (!is_wp_error($result)) { update_post_meta($values['data']['attachment_id'],'_hpads_advertiser_id',$values['parent']); }
         return $result;
     }
@@ -267,7 +326,7 @@ final class HPADS_Placements {
         echo '<p><strong>'.esc_html($templates?'Template':($r?HPADS_Workflow::summary($r):'Draft')).'</strong></p>';
         if ($r && !$templates && self::published_item($r['id'])) { echo '<p><a class="button" target="_blank" rel="noopener" href="'.esc_url(self::public_url($r['id'])).'">View Published Landing Page</a></p>'; }
         if ($r && !$templates) { echo '<p><a class="button" target="_blank" rel="noopener" href="'.esc_url(self::preview_url($r['id'])).'">Preview Landing Page</a></p>'; }
-        if ($r) { echo '<p>Entry #'.(int)$r['id'].' · Revision '.(int)($d['content_revision'] ?? 1).'<br>Updated '.esc_html($r['updated_at']).' UTC</p>'; }
+        if ($r) { echo '<p>Entry #'.(int)$r['id'].' · Revision '.(int)($d['content_revision'] ?? 1).'<br>Updated '.esc_html(HPADS_Core::display_datetime($r['updated_at'],true)).'</p>'; }
         if ($source) { echo '<p>Starting values copied from template #'.(int)$source['id'].'.</p>'; }
         if ($write) { submit_button($r?'Save Changes':'Save Draft','primary','submit',false); if ($r && !$templates && self::published_item($r['id'])) { echo '<p><a class="button" target="_blank" rel="noopener" href="'.esc_url(self::public_url($r['id'])).'">View Published Landing Page</a></p>'; }
         if ($r && !$templates) { echo '<p><a href="#hpads-save-template">Save as Template</a> · <a href="#hpads-duplicate">Duplicate Placement</a></p>'; } }
@@ -276,6 +335,7 @@ final class HPADS_Placements {
         ob_start();
         if ($r || $source) { echo '<p><strong>Owner</strong><br>'.esc_html($owners[$owner] ?? $owner).'</p><input type="hidden" name="owner" value="'.esc_attr($owner).'">'; }
         else { HPADS_Admin::select('Owner','owner',$owners,$owner); echo '<p class="description hpads-owner-status" role="status">Select the owner; eligible playlists update here without leaving this page.</p><button type="button" class="button hpads-refresh-owner" hidden>Retry Playlist Lookup</button>'; }
+        if ($templates) { HPADS_Venue_Workspace::scope_fields($d); }
         HPADS_Admin::select('Display orientation','orientation',['auto'=>'Detect from file','horizontal'=>'Horizontal / landscape','vertical'=>'Vertical / portrait'],$d['orientation'] ?? 'auto');
         HPADS_Admin::select('Entrance transition','transition_in',self::TRANSITIONS,$d['transition_in'] ?? 'none');
         HPADS_Admin::select('Exit transition','transition_out',self::TRANSITIONS,$d['transition_out'] ?? 'none');

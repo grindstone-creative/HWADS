@@ -2,5 +2,6 @@
   "site_url": "https://highpocketsinmemphis.com/HPADS",
   "device_id": 123,
   "device_key": "REPLACE_WITH_THIS_DEVICES_UNIQUE_KEY",
+  "analytics_enabled": true,
   "max_media_bytes": 2147483648
 }

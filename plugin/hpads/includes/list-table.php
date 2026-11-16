@@ -11,12 +11,14 @@ final class HPADS_List_Table extends WP_List_Table {
         $columns=['title'=>'Name','id'=>'ID'];
         if (in_array($this->kind,['company','advertiser'],true)) { $columns['email']='Contact email'; }
         else { $columns[$this->kind==='creative'?'owner':'parent']=$this->kind==='location'?'Venue company':($this->kind==='creative'?'Owner':'Location'); }
+        if ($this->kind==='company') { $columns['locations']='Locations'; }
+        if ($this->kind==='location') { $columns['workspace']='Dashboard'; }
         if ($this->kind==='device') { $columns+=['type'=>'Device type','orientation'=>'Orientation','status'=>'Status']; }
         if ($this->kind==='creative') { $columns+=['rotation'=>'Rotation','targets'=>'Location','approval'=>'Review status','orientation'=>'Orientation','attachment'=>'Media']; }
         if ($this->kind==='playlist') { $columns+=['purpose'=>'Purpose','publication'=>'Publication']; }
         if ($this->kind==='creative' && ($_GET['page'] ?? '')==='hpads-templates') { unset($columns['rotation'],$columns['targets'],$columns['approval']); }
-        elseif ($this->kind==='creative') { $columns['schedule']='Schedule (UTC)'; }
-        $columns['updated_at']='Last updated (UTC)';
+        elseif ($this->kind==='creative') { $columns['schedule']='Schedule ('.wp_timezone_string().')'; }
+        $columns['updated_at']='Last updated ('.wp_timezone_string().')';
         return $columns;
     }
     protected function get_sortable_columns() { return ['title'=>['title',false],'id'=>['id',false],'owner'=>['owner_sort',false],'updated_at'=>['updated_at',true]]; }
@@ -77,7 +79,9 @@ final class HPADS_List_Table extends WP_List_Table {
     function column_default($item,$column) {
         $d=$item['data'];
         switch ($column) {
-            case 'schedule': return esc_html(ucfirst(HPADS_Placements::time_state($item)).' · '.($d['start'] ?? 'No start').' → '.($d['end'] ?? 'No end'));
+            case 'schedule': return esc_html(ucfirst(HPADS_Placements::time_state($item)).' · '.(!empty($d['start'])?HPADS_Core::display_datetime($d['start']):'No start').' → '.(!empty($d['end'])?HPADS_Core::display_datetime($d['end']):'No end'));
+            case 'locations': return HPADS_Venue_Workspace::location_links($item['id']);
+            case 'workspace': return '<a href="'.esc_url(HPADS_Venue_Workspace::url($item['id'])).'">Open venue dashboard</a>';
             case 'id': return (string)(int)$item['id'];
             case 'email': return esc_html($d['email'] ?? '');
             case 'rotation': $p=HPADS_Core::get($d['rotation_id'] ?? 0,'playlist'); return esc_html($p?$p['title']:(HPADS_Placements::is_template($item)?'Template only':'—'));
@@ -94,11 +98,11 @@ final class HPADS_List_Table extends WP_List_Table {
                 return '<a href="'.esc_url(HPADS_Admin::url($parent['kind'],$parent['id'])).'">'.esc_html($parent['title']).'</a>';
             case 'type': return esc_html(HPADS_Core::TYPES[$d['type'] ?? 'mixed'] ?? 'Custom');
             case 'orientation': return esc_html(ucfirst($d['orientation'] ?? 'unknown'));
-            case 'status': return esc_html((empty($d['enabled'])?'Disabled · ':'').HPADS_Admin::status($item['id']));
+            case 'status': return (empty($d['enabled'])?'Disabled · ':'').HPADS_Admin::status($item['id'],true);
             case 'attachment': return 'Attachment #'.(int)($d['attachment_id'] ?? 0);
             case 'purpose': return ($d['purpose'] ?? '')==='house'?'House / placeholder':'Primary';
             case 'publication': return empty($d['published_version'])?'Unpublished draft':'Published version #'.(int)$d['published_version'];
-            case 'updated_at': return esc_html($item['updated_at']);
+            case 'updated_at': return esc_html(HPADS_Core::display_datetime($item['updated_at']));
         }
         return '';
     }

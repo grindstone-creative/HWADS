@@ -8,7 +8,7 @@ final class HPADS_Update_Policy {
     static function allowed($l) {
         return $l && HPADS_Core::can($l) && (HPADS_Workflow::global_admin() || current_user_can('hpads_admin') || current_user_can('hpads_account_manager') || HPADS_Workflow::venue_admin());
     }
-    static function policy($l) { $p=$l['data']['update_policy'] ?? [];return ['enabled'=>!empty($p['enabled']),'time'=>$p['time'] ?? '','window_minutes'=>30,'timezone'=>wp_timezone_string(),'tv_off_required'=>true]; }
+    static function policy($l) { $p=$l['data']['update_policy'] ?? [];return ['enabled'=>!empty($p['enabled']),'time'=>$p['time'] ?? '','window_minutes'=>30,'timezone'=>wp_timezone_string(),'tv_off_required'=>false]; }
     static function apply($lid,$input) {
         $l=HPADS_Core::get($lid,'location');if (!self::allowed($l)) { return HPADS_Core::error('You cannot change this location update schedule.',403); }
         if ((int)($input['location_revision'] ?? -1)!==(int)$l['revision']) { return HPADS_Core::error('Location changed. Reload before saving its update schedule.',409); }
@@ -30,7 +30,7 @@ final class HPADS_Update_Policy {
             self::$form=['location'=>$l,'return_device'=>$r['kind']==='device'?$r['id']:0];
             echo '<p><label><input type="checkbox" name="schedule_enabled" value="1" form="hwads-policy-form" '.checked($p['enabled'],true,false).'> Allow scheduled software updates</label></p><p><label>Daily update time <input type="time" name="update_time" value="'.esc_attr($p['time']).'" form="hwads-policy-form"></label></p><p><button class="button" type="submit" form="hwads-policy-form">Save Location Update Schedule</button></p>';
         } else { echo '<p>'.esc_html($p['enabled']?$p['time'].' daily':'Scheduled software updates disabled').'</p>'; }
-        echo '<p>30-minute window. Future automatic software installation must also confirm the TV is off; unknown TV status leaves the update pending. This does not schedule playlist/media syncing or authorize a Pi reboot.</p><p>Schedule is stored for the software updater. Automatic software installation and TV-power detection are not implemented yet. This action saves only the schedule, not other editor changes.</p></div></div>';
+        echo '<p>Updates explicitly scheduled in Devices → Player Updates become due at this local time. If a HWADS Box is off or disconnected, it installs at its next check-in after that time. The TV may stay on; software briefly restarts without rebooting the HWADS Box. Playlist/media syncing keeps its own schedule.</p><p>Saving this preference does not queue a release. SuperAdmin chooses a release and devices in Player Updates, then selects Schedule Selected Devices. This action saves only the location schedule, not other editor changes.</p></div></div>';
     }
     static function form() {
         if (!self::$form) { return; }$l=self::$form['location'];echo '<form id="hwads-policy-form" method="post" action="'.esc_url(admin_url('admin-post.php')).'">';

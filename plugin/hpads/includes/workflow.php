@@ -6,6 +6,7 @@ final class HPADS_Workflow {
         'hpads_owner'=>'HWADS SuperAdmin / Owner',
         'hpads_team_admin'=>'HWADS Admin',
         'hpads_producer'=>'HWADS Producer',
+        'hpads_designer'=>'Designer',
         'hpads_account_manager'=>'HWADS Account Manager',
         'hpads_sales'=>'HWADS Sales',
         'hpads_advertiser_admin'=>'Advertiser Admin',
@@ -26,6 +27,7 @@ final class HPADS_Workflow {
     static function venue_admin() { return current_user_can('hpads_venue_admin') || current_user_can('hpads_venue'); }
     static function advertiser_admin() { return current_user_can('hpads_advertiser_admin'); }
     static function team_owns($type,$id) {
+        if (HPADS_Content_Access::designer()) { return HPADS_Content_Access::owner_scope($type,$id); }
         if (self::production()) { return true; }
         if ((current_user_can('hpads_admin') || current_user_can('hpads_account_manager'))) { return in_array((int)$id,HPADS_Core::assigned($type==='advertiser'?'advertisers':'companies'),true); }
         return $type==='advertiser' ? self::advertiser_member() && in_array((int)$id,HPADS_Core::assigned('advertisers'),true) : self::venue_member() && in_array((int)$id,HPADS_Core::assigned('companies'),true);
@@ -39,6 +41,9 @@ final class HPADS_Workflow {
     static function owner_record($ad) { [$type,$id]=self::owner_ref($ad); return HPADS_Core::get($id,$type); }
     static function can_ad($ad,$write=false) {
         if (!current_user_can('hpads_access')) { return false; }
+        if (HPADS_Content_Access::grant($ad,$write)) { return true; }
+        if (HPADS_Content_Access::designer()) { return HPADS_Content_Access::design_ad($ad,$write); }
+        if (!$write && HPADS_Approvals::visible($ad)) { return true; }
         [$type,$id]=self::owner_ref($ad);
         if (($ad['data']['record_type'] ?? '')==='placement' && HPADS_Placements::manager() && !self::production()) { return HPADS_Placements::managed_location($ad['data']['locations'][0] ?? 0); }
         if (self::global_staff()) { return !$write || self::production(); }
@@ -72,6 +77,7 @@ final class HPADS_Workflow {
         return $ids;
     }
     static function submit($ad) {
+        if (HPADS_Approvals::placement($ad)) { return HPADS_Approvals::submit($ad); }
         if (!self::can_ad($ad,true)) { return HPADS_Core::error('Only the ad owner team or a producer can submit it.',403); }
         [$type,$id]=self::owner_ref($ad); $d=$ad['data'];
         if (($d['record_type'] ?? '')==='template') { return HPADS_Core::error('Templates are starting content only. Create a placement and submit that entry.'); }
@@ -104,6 +110,7 @@ final class HPADS_Workflow {
         return HPADS_Core::put('creative',$ad['title'],$ad['parent_id'],$d,$ad['id'],(int)$ad['revision']);
     }
     static function can_review($ad,$lid) {
+        if (HPADS_Approvals::placement($ad)) { return HPADS_Approvals::can_review($ad,$lid); }
         $l=HPADS_Core::get($lid,'location');
         if (!$l || !in_array((int)$lid,$ad['data']['locations'] ?? [],true) || ($ad['data']['state'] ?? '')!=='venue_review') { return false; }
         if (!self::approved_for_review($ad,$lid)) { return false; }
@@ -115,6 +122,7 @@ final class HPADS_Workflow {
         return in_array((int)$lid,$eligible,true) && ($d['manager_review']['status'] ?? '')==='approved' && (int)($d['manager_review']['revision'] ?? 0)===(int)($d['content_revision'] ?? 1);
     }
     static function review($ad,$lid,$decision,$note='') {
+        if (HPADS_Approvals::placement($ad)) { return HPADS_Approvals::review($ad,$lid,$decision,$note); }
         if (!self::can_review($ad,$lid)) { return HPADS_Core::error('Only the receiving venue admin can review this location.',403); }
         if (!in_array($decision,['approved','rejected','pending'],true)) { return HPADS_Core::error('Invalid review decision.'); }
         $d=$ad['data']; $entry=['status'=>$decision,'revision'=>(int)$d['submission_revision'],'by'=>get_current_user_id(),'at'=>gmdate('c'),'note'=>substr(sanitize_textarea_field($note),0,1000)];
@@ -126,6 +134,7 @@ final class HPADS_Workflow {
         return HPADS_Core::put('creative',$ad['title'],$ad['parent_id'],$d,$ad['id'],(int)$ad['revision']);
     }
     static function approved($ad,$lid) {
+        if (HPADS_Approvals::placement($ad)) { return HPADS_Approvals::context($ad,$lid)['status']==='approved'; }
         $d=$ad['data']; [$type,$id]=self::owner_ref($ad);
         $eligible=array_map(function($l){return (int)$l['id'];},self::eligible_locations($type,$id));
         if (self::automatic()) { return in_array((int)$lid,$eligible,true) && in_array((int)$lid,$d['locations'] ?? [],true) && ($d['record_type'] ?? '')!=='template'; }
@@ -136,6 +145,7 @@ final class HPADS_Workflow {
         return ($r['status'] ?? '')==='approved' && (int)($r['revision'] ?? 0)===(int)($d['content_revision'] ?? 1);
     }
     static function summary($ad) {
+        if (HPADS_Approvals::placement($ad)) { return HPADS_Approvals::summary($ad); }
         $d=$ad['data']; if (self::automatic() && ($d['record_type'] ?? '')==='placement') { return 'Approved automatically'; } if (empty($d['workflow'])) { return 'Legacy'; }
         if (($d['state'] ?? '')==='account_review') { return 'Awaiting account manager'; }
         if (($d['state'] ?? '')==='changes_requested') { return 'Account manager requested changes'; }
@@ -147,6 +157,8 @@ final class HPADS_Workflow {
     static function upgrade() {
         foreach (self::ROLES as $key=>$label) { add_role($key,$label,['read'=>true,'hpads_access'=>true,$key=>true]); }
         foreach (array_keys(self::ROLES) as $role_key) { $role=get_role($role_key);if ($role && $role_key!=='hpads_sales' && !$role->has_cap('upload_files')) { $role->add_cap('upload_files'); } }
+        // Current HWADS Admins and the previously supported legacy role use the native uploader.
+        foreach (['hpads_team_admin','hpads_admin'] as $role_key) { $upload_admin=get_role($role_key);if ($upload_admin) { foreach (['install_plugins','upload_plugins','update_plugins','activate_plugins'] as $cap) { if (!$upload_admin->has_cap($cap)) { $upload_admin->add_cap($cap); } } } }
         if (get_option('hpads_workflow_schema')==='2') { return; }
         global $wpdb;
         foreach (HPADS_Core::entity_ids('creative') as $id) {

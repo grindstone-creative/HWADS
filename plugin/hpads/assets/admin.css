@@ -45,13 +45,18 @@
 .hpads-card-preview { width:190px;min-height:100px;background:#fff;display:flex;align-items:center;justify-content:center; }
 .hpads-card-preview img,.hpads-card-preview video { max-width:100%;max-height:160px;object-fit:contain; }
 .hpads-item { background:#fff;align-items:center;box-shadow:0 1px 2px #0000000d; }
-.hpads-playlist-import { padding:16px;background:#f6f7f7;border:1px solid #c3c4c7;margin:16px 0; }
-#hpads-dropzone { border:2px dashed #8c8f94;padding:35px 15px;text-align:center;background:white;cursor:pointer; }
-#hpads-dropzone.is-dragging,#hpads-dropzone:focus { border-color:#2271b1;background:#f0f6fc;outline:2px solid #2271b1; }
+.hpads-upload-panel { clear:both;box-sizing:border-box;padding:16px;background:#f6f7f7;border:1px solid #c3c4c7;margin:16px 0; }
+.hpads-upload-panel h2 { margin:0 0 16px;font-size:16px;line-height:1.4; }
+.hpads-upload-drop { box-sizing:border-box;width:100%;border:2px dashed #8c8f94;padding:35px 15px;text-align:center;background:#fff;cursor:pointer;margin:12px 0; }
+.hpads-upload-drop.is-dragging,.hpads-upload-drop:focus { border-color:#2271b1;background:#f0f6fc;outline:2px solid #2271b1; }
+.hpads-upload-fields { display:flex;flex-wrap:wrap;gap:12px 20px;align-items:flex-end; }
+.hpads-upload-fields p { margin:0;min-width:0; }
+.hpads-upload-fields label { display:block;font-weight:600;margin-bottom:4px; }
+.hpads-upload-fields select { float:none;display:block;margin:0;max-width:100%;min-width:220px;box-sizing:border-box; }
+.hpads-template-upload .description { margin:12px 0 0;max-width:none; }
+.hpads-template-upload [role=status]:empty,.hpads-template-upload ul:empty { display:none; }
+@media(max-width:600px) { .hpads-upload-fields { display:grid;grid-template-columns:minmax(0,1fr); }.hpads-upload-fields select { width:100%;min-width:0; }.hpads-upload-panel { padding:14px; } }
 
-.hpads-template-upload { padding:18px;background:#fff;border:1px solid #c3c4c7;margin:18px 0; }
-#hpads-template-drop { margin-top:16px;border:2px dashed #8c8f94;padding:30px;text-align:center;cursor:pointer; }
-#hpads-template-drop:focus { outline:2px solid #2271b1; }
 .hpads-native-card { align-items:start;display:grid;grid-template-columns:minmax(160px,30%) 1fr;gap:22px;padding:16px; }
 #hwads-native-preview img,#hwads-native-preview video { max-width:100%;max-height:360px;object-fit:contain; }
 .hpads-native-fields { min-width:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 14px; }
@@ -71,3 +76,6 @@
 .hpads-editor-layout #post-body-content { min-width:0; }
 .hpads-editor-layout .inside { overflow-wrap:anywhere; }
 @media(max-width:850px){.hpads-editor-layout #post-body.columns-2{margin-right:0}.hpads-editor-layout #post-body.columns-2 #postbox-container-1{float:none;margin:0;width:100%}.hpads-editor-layout #post-body-content{float:none;width:100%}}
+
+/* Native title hints remain accessible labels, never painted over entered text. */
+body[class*="post-type-hpads_"] #titlediv #title-prompt-text{position:absolute!important;clip:rect(1px,1px,1px,1px)!important;clip-path:inset(50%)!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;white-space:nowrap!important;border:0!important}

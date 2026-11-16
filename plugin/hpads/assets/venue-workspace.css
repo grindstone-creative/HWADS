@@ -1,0 +1,24 @@
+.hwads-template-dialog{box-sizing:border-box;width:min(760px,calc(100vw - 32px));max-width:calc(100vw - 32px);max-height:85vh;overflow:auto;border:1px solid #c3c4c7;border-radius:4px;padding:24px;color:#1d2327;background:#fff}.hwads-template-dialog::backdrop{background:rgba(0,0,0,.45)}.hwads-template-heading{display:flex;align-items:center;justify-content:space-between;gap:16px}.hwads-template-tabs{display:flex;gap:8px;flex-wrap:wrap}.hwads-template-tabs [aria-pressed=true]{border-color:#2271b1;color:#135e96;background:#f0f6fc}.hwads-template-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;max-height:42vh;overflow:auto;padding:4px}.hwads-template-choice{padding:0;border:1px solid #c3c4c7;background:#fff;text-align:left;color:#1d2327;cursor:pointer}.hwads-template-choice img{display:block;width:100%;aspect-ratio:16/9;object-fit:cover}.hwads-template-choice span{display:block;padding:12px}.hwads-template-choice[aria-pressed=true]{outline:2px solid #2271b1}.hwads-template-choice:focus-visible{outline:2px solid #2271b1;outline-offset:2px}
+
+.hwads-copy-destination select{max-width:100%}@media(max-width:600px){.hwads-template-dialog{padding:16px}.hwads-template-heading{align-items:flex-start}.hwads-template-grid{grid-template-columns:repeat(auto-fill,minmax(130px,1fr))}}
+.hwads-dashboard-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:18px 0}.hwads-dashboard-card{background:#fff;border:1px solid #c3c4c7;padding:18px}.hwads-dashboard-card span{display:block;font-size:14px}.hwads-dashboard-card strong{display:block;font-size:30px;line-height:1.4;margin-top:8px}.hwads-dashboard-filters{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:12px 0}.hwads-dashboard-filters select{max-width:100%}.hwads-dashboard-filters label{display:flex;gap:8px;align-items:center}.hwads-location-context h1,.hwads-devices-dashboard h1{font-weight:400;font-size:23px}
+
+/* Separate list GET forms and the native venue POST form share one visual layout. */
+.hwads-venue-editor-layout{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:24px;align-items:start;margin-top:16px}
+.hwads-venue-editor-layout>#hwads-venue-dashboard{min-width:0;margin:0}
+.hwads-venue-editor-layout>#post{min-width:0}
+.hwads-venue-editor-layout #poststuff{min-width:0;padding-top:0}
+.hwads-venue-editor-layout #post-body{margin:0!important}
+.hwads-venue-editor-layout #post-body-content{display:none}
+.hwads-venue-editor-layout #postbox-container-1{float:none;width:100%!important;margin:0!important}
+.hwads-venue-editor-layout #postbox-container-2:empty{display:none}
+.hwads-venue-editor-layout #titlediv{margin:10px 0 16px}
+.hwads-venue-editor-layout #titlediv #title{font-size:18px;height:auto;padding:8px;box-sizing:border-box;width:100%}
+.hwads-venue-editor-layout #hwads-details input:not([type=checkbox]):not([type=radio]),.hwads-venue-editor-layout #hwads-details select{max-width:100%;box-sizing:border-box}
+.hwads-venue-editor-layout #hwads-details fieldset{min-width:0}
+.hwads-venue-editor-layout #hwads-details p{overflow-wrap:anywhere}
+.hwads-venue-panel-status:empty{display:none}.hwads-venue-editor-layout [aria-busy=true]{opacity:.65}
+@media(max-width:1100px){.hwads-venue-editor-layout{grid-template-columns:minmax(0,1fr) 300px;gap:16px}}
+@media(max-width:850px){.hwads-venue-editor-layout{grid-template-columns:minmax(0,1fr)}.hwads-venue-editor-layout>#post{width:100%}}
+
+.hwads-venue-editor-layout #hwads-venue-dashboard>h1[hidden]{display:none!important}

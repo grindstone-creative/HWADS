@@ -1,0 +1,21 @@
+import fs from 'node:fs';
+import vm from 'node:vm';
+import assert from 'node:assert/strict';
+const source=fs.readFileSync(new URL('../plugin/hpads/assets/admin.js',import.meta.url),'utf8');
+new vm.Script(source);
+const handler=source.slice(source.indexOf("    addButton.addEventListener('click'"),source.indexOf("    form.addEventListener('input'"));
+let callback,focused=0,scrolled=0;
+const picker={options:[{},{}],focus(){focused++;}};
+const context={addButton:{addEventListener(type,fn){callback=fn;}},importPanel:{scrollIntoView(){scrolled++;}},picker,document:{getElementById(){return {focus(){focused++;}};}}};
+vm.runInNewContext(handler,context);callback();assert.equal(focused,1);assert.equal(scrolled,1);
+picker.options=[{}];callback();assert.equal(focused,2);
+const create=source.slice(source.indexOf('    async function createPlacement('),source.indexOf("    const drop=document.getElementById('hpads-dropzone')"));
+class FormData extends URLSearchParams {}
+let request,rows=[];
+const state={importing:false,status:{},FormData,HPADSAdmin:{createNonce:'nonce',ajaxUrl:'/ajax'},form:{querySelector(){return {value:'42'};}},media:{},bound:{},available:[],editor:{},row(item){rows.push(item);},dirty:false,addButton:{},emptyMessage:{},fetch:async(url,options)=>{request=options.body;return {ok:true,json:async()=>({success:true,data:{id:99,title:'Independent copy'}})};}};
+vm.createContext(state);vm.runInContext(create,state);
+assert.equal(await state.createPlacement({source_id:7}),true);
+assert.equal(request.get('rotation_id'),'42');assert.equal(request.get('source_id'),'7');assert.equal(request.get('nonce'),'nonce');assert.equal(rows[0].creative_id,99);assert.equal(state.bound[99].title,'Independent copy');
+state.fetch=async()=>({ok:false,json:async()=>({success:false,data:{message:'Not permitted'}})});
+assert.equal(await state.createPlacement({source_id:8}),false);assert.equal(rows.length,1);assert.equal(state.status.textContent,'Not permitted');assert.equal(state.importing,false);
+console.log('PASS: Add Placement opens choices with and without templates; template creation sends source, destination and nonce; new cards use returned placement ID; failures add no card and allow retry.');

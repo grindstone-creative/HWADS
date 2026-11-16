@@ -1,12 +1,12 @@
 <?php
 if (!defined('ABSPATH')) { exit; }
 final class HPADS_Post_Types {
-    const TYPES=['hpads_venue'=>'Venues','hpads_location'=>'Locations','hpads_device'=>'Devices','hpads_advertiser'=>'Advertisers','hpads_template'=>'My Ad Templates','hpads_placement'=>'My Ad Placements','hpads_playlist'=>'Playlists'];
+    const TYPES=['hpads_venue'=>'Venues','hpads_location'=>'Locations','hpads_device'=>'Devices','hpads_advertiser'=>'Advertisers','hpads_template'=>'My Ad Templates','hpads_placement'=>'Ads','hpads_playlist'=>'Playlists'];
     const KINDS=['hpads_venue'=>'company','hpads_location'=>'location','hpads_device'=>'device','hpads_advertiser'=>'advertiser','hpads_template'=>'creative','hpads_placement'=>'creative','hpads_playlist'=>'playlist'];
     static function register() {
         foreach (self::TYPES as $type=>$label) {
             $singular=['hpads_template'=>'Ad Template','hpads_placement'=>'Ad Placement','hpads_playlist'=>'Playlist'][$type] ?? rtrim($label,'s');
-            register_post_type($type,['label'=>$label,'labels'=>['name'=>$label,'singular_name'=>$singular,'add_new_item'=>'Add New '.$singular,'edit_item'=>'Edit '.$singular,'new_item'=>'New '.$singular],'public'=>false,'publicly_queryable'=>false,'show_ui'=>true,'show_in_menu'=>false,'show_in_rest'=>false,'rewrite'=>false,'supports'=>in_array($type,['hpads_template','hpads_placement'],true)?['title','editor']:['title'],'capabilities'=>['edit_posts'=>'hpads_access','create_posts'=>'hpads_access','publish_posts'=>HPADS_Native_Editor::supports($type)?'hpads_access':'do_not_allow','delete_posts'=>'do_not_allow','edit_others_posts'=>'hpads_access','read_private_posts'=>'hpads_access'],'map_meta_cap'=>true,'delete_with_user'=>false]);
+            register_post_type($type,['label'=>$label,'labels'=>['name'=>$label,'singular_name'=>$singular,'add_new_item'=>'Add New '.$singular,'edit_item'=>'Edit '.$singular,'new_item'=>'New '.$singular]+($type==='hpads_placement'?['search_items'=>'Search Ads','not_found'=>'No ads found.']:[]),'public'=>in_array($type,['hpads_template','hpads_placement'],true),'publicly_queryable'=>in_array($type,['hpads_template','hpads_placement'],true),'exclude_from_search'=>true,'has_archive'=>false,'show_ui'=>true,'show_in_menu'=>false,'show_in_rest'=>false,'rewrite'=>false,'supports'=>in_array($type,['hpads_template','hpads_placement'],true)?['title','editor']:['title'],'capabilities'=>['edit_posts'=>'hpads_access','create_posts'=>'create_'.$type,'publish_posts'=>HPADS_Native_Editor::supports($type)?'hpads_access':'do_not_allow','delete_posts'=>'do_not_allow','edit_others_posts'=>'hpads_access','read_private_posts'=>'hpads_access'],'map_meta_cap'=>true,'delete_with_user'=>false]);
             add_filter('manage_'.$type.'_posts_columns',[__CLASS__,'columns']);
             add_action('manage_'.$type.'_posts_custom_column',[__CLASS__,'column'],10,2);
         }
@@ -21,12 +21,15 @@ final class HPADS_Post_Types {
         add_filter('post_row_actions',[__CLASS__,'actions'],10,2);
         add_filter('get_edit_post_link',[__CLASS__,'edit_link'],10,3);
         add_action('restrict_manage_posts',[__CLASS__,'upload_panel'],10,2);
+        add_filter('views_edit-hpads_template',[__CLASS__,'template_upload']);
     }
     static function menu_section() {
         $screen=get_current_screen();
         $type=$screen?$screen->post_type:'';
-        if (isset(self::KINDS[$type])) { return $type==='hpads_template'?'templates':($type==='hpads_placement'?'playlist':self::KINDS[$type]); }
+        if ($type==='hpads_playlist' && HPADS_Admin::can_section('company')) { return 'company'; }
+        if (isset(self::KINDS[$type])) { return in_array($type,['hpads_template','hpads_placement'],true)?'creative':self::KINDS[$type]; }
         $page=sanitize_key($_GET['page'] ?? '');
+        if (in_array($page,['hpads-updates','hwads-pending-playback'],true)) { return 'device'; }
         foreach (array_keys(HPADS_Admin::PAGES) as $section) { if ($page==='hpads-'.$section) { return $section; } }
         return null;
     }
@@ -35,6 +38,7 @@ final class HPADS_Post_Types {
     static function kind_page($post) { return $post->post_type==='hpads_template'?'templates':self::KINDS[$post->post_type]; }
     static function record($pid) { $id=get_post_meta($pid,'_hpads_id',true);return $id?HPADS_Core::get((int)$id):null; }
     static function caps($caps,$cap,$uid,$args) {
+        if (strpos($cap,'create_hpads_')===0) { $type=substr($cap,7);return (int)$uid===get_current_user_id() && isset(self::KINDS[$type]) && HPADS_Admin::can_add(self::KINDS[$type])?['hpads_access']:['do_not_allow']; }
         if (!in_array($cap,['edit_post','read_post','delete_post'],true) || empty($args[0])) { return $caps; }
         $p=get_post($args[0]);if (!$p || !isset(self::TYPES[$p->post_type])) { return $caps; }
         // HPADS record checks are based on the logged-in actor, matching native admin requests.
@@ -43,10 +47,13 @@ final class HPADS_Post_Types {
     }
     static function scope($q) {
         if (!is_admin() || !$q->is_main_query() || !HPADS_Storage::active()) { return; }
+        if (HPADS_Ad_Library::active() && $q->get('post_type')==='hpads_placement') { HPADS_Ad_Library::scope($q);return; }
         $type=$q->get('post_type');if (!is_string($type) || !isset(self::KINDS[$type])) { return; }
         $ids=[];foreach (HPADS_Core::all(self::KINDS[$type]) as $r) {
             if (HPADS_Storage::type($r['kind'],$r['data'])!==$type) { continue; }
             if ($type==='hpads_placement' && empty($_GET['show_past']) && in_array(HPADS_Placements::time_state($r),['past','inactive'],true)) { continue; }
+            if ($type==='hpads_placement' && !empty($_GET['approval_filter'])) { $match=false;foreach ($r['data']['locations'] ?? [] as $lid) { if (HPADS_Approvals::context($r,$lid)['status']===sanitize_key($_GET['approval_filter'])) { $match=true;break; } }if (!$match) { continue; } }
+            if (!HPADS_Venue_Workspace::matches_context($r)) { continue; }
             $ids[]=HPADS_Storage::post_id($r['id']);
         }
         $q->set('post__in',$ids?:[0]);
@@ -54,7 +61,7 @@ final class HPADS_Post_Types {
     static function counts($counts,$type,$perm) {
         if (!isset(self::KINDS[$type]) || !HPADS_Storage::active()) { return $counts; }
         $out=new stdClass();foreach (get_post_stati() as $status) { $out->$status=0; }
-        foreach (HPADS_Core::all(self::KINDS[$type]) as $r) { if (HPADS_Storage::type($r['kind'],$r['data'])!==$type) { continue; }$status=get_post_status(HPADS_Storage::post_id($r['id']));if ($status) { $out->$status++; } }
+        foreach (HPADS_Core::all(self::KINDS[$type]) as $r) { if (HPADS_Storage::type($r['kind'],$r['data'])!==$type || !HPADS_Venue_Workspace::matches_context($r)) { continue; }$status=get_post_status(HPADS_Storage::post_id($r['id']));if ($status) { $out->$status++; } }
         return $out;
     }
     static function edit_link($link,$pid,$context) {
@@ -66,7 +73,13 @@ final class HPADS_Post_Types {
         global $pagenow;
         if (!HPADS_Storage::active()) { return; }
         $page=sanitize_key($_GET['page'] ?? '');
+        if (($pagenow==='edit.php' && in_array($_GET['post_type'] ?? '',['hpads_template','hpads_placement'],true) && !isset($_GET['hwads_ads'])) || ($pagenow==='admin.php' && !isset($_GET['edit']) && in_array($page,['hpads-creative','hpads-templates'],true))) {
+            $tab=($_GET['post_type'] ?? '')==='hpads_template' || $page==='hpads-templates'?'templates':'all';
+            $args=array_intersect_key($_GET,array_flip(['s','orderby','order','paged','approval_filter','post_status','m','hwads_location','hwads_venue']));
+            wp_safe_redirect(add_query_arg($args,HPADS_Ad_Library::url($tab)));exit;
+        }
         if ($pagenow==='admin.php' && isset($_GET['edit']) && in_array($page,['hpads-creative','hpads-templates','hpads-playlist'],true)) { $type=$page==='hpads-templates'?'hpads_template':($page==='hpads-playlist'?'hpads_playlist':'hpads_placement');wp_safe_redirect(HPADS_Native_Editor::url($type,absint($_GET['edit'])));exit; }
+        if ($pagenow==='admin.php' && ($page==='hpads-playlist' && (isset($_GET['revision']) || isset($_GET['copy_playlist'])))) { return; }
         if ($pagenow==='admin.php' && !isset($_GET['edit'])) { foreach (self::KINDS as $type=>$kind) { $slug=$type==='hpads_template'?'templates':$kind; if ($page==='hpads-'.$slug) { wp_safe_redirect(add_query_arg('post_type',$type,admin_url('edit.php')));exit; } } }
         if ($pagenow==='post-new.php' && isset(self::KINDS[$_GET['post_type'] ?? ''])) {
             $type=sanitize_key($_GET['post_type']);if (HPADS_Native_Editor::supports($type)) { return; }$kind=$type==='hpads_template'?'templates':self::KINDS[$type];wp_safe_redirect(HPADS_Admin::url($kind,0));exit;
@@ -82,22 +95,45 @@ final class HPADS_Post_Types {
         if (!isset(self::KINDS[$p->post_type])) { return $actions; }
         $r=self::record($p->ID);if (!$r || !HPADS_Core::can($r)) { return []; }
         $out=['edit'=>'<a href="'.esc_url(HPADS_Admin::url(self::kind_page($p),$r['id'])).'">'.(HPADS_Core::can($r,true)?'Edit':'View').'</a>'];
+        if ($p->post_type==='hpads_placement' && !empty($r['data']['submission_revision'])) { $out['review']='<a href="'.esc_url(HPADS_Approvals::url($r)).'">Review Ad</a>'; }
         if ($p->post_type==='hpads_placement' && HPADS_Placements::published_item($r['id'])) { $out['view']='<a href="'.esc_url(HPADS_Placements::public_url($r['id'])).'">View Landing Page</a>'; }
         return $out;
     }
-    static function columns($columns) { return ['title'=>'Name','hpads_id'=>'ID','hpads_parent'=>'Owner / location','hpads_state'=>'HWADS status','date'=>'Date']; }
+    static function columns($columns) {
+        $out=['cb'=>$columns['cb'] ?? '<input type="checkbox" />','title'=>'Name'];
+        if (in_array(current_filter(),['manage_hpads_template_posts_columns','manage_hpads_placement_posts_columns'],true)) { $out['hpads_preview']='Preview'; }
+        return $out+['hpads_id'=>'ID','hpads_parent'=>current_filter()==='manage_hpads_venue_posts_columns'?'Locations':'Owner / location','hpads_state'=>'HWADS status','date'=>'Date'];
+    }
+    static function preview($record) {
+        if (!$record || $record['kind']!=='creative' || !HPADS_Core::can($record)) { return ''; }
+        $aid=(int)($record['data']['attachment_id'] ?? 0);if (!$aid) { return '<span aria-label="No media">—</span>'; }
+        $video=strpos((string)get_post_mime_type($aid),'video/')===0;
+        $image=$video?get_post_thumbnail_id($aid):$aid;
+        $label=$record['title'].($video?' (video)':'');
+        $content=$image?wp_get_attachment_image($image,'medium',false,['alt'=>$label,'loading'=>'lazy','style'=>'width:100px;height:56px;object-fit:contain;display:block;']):'';
+        if (!$content) { $content='<span class="dashicons '.($video?'dashicons-video-alt3':'dashicons-format-image').'" aria-hidden="true"></span><span class="screen-reader-text">'.esc_html($video?'Video':'Media unavailable').'</span>'; }
+        return '<a href="'.esc_url(HPADS_Admin::url(HPADS_Placements::is_template($record)?'templates':'creative',$record['id'])).'" aria-label="'.esc_attr('Edit '.$label).'">'.$content.'</a>';
+    }
     static function column($column,$pid) {
         $r=self::record($pid);if (!$r || !HPADS_Core::can($r)) { return; }
+        if ($column==='hpads_preview') { echo self::preview($r);return; }
         if ($column==='hpads_id') { echo (int)$r['id']; }
-        if ($column==='hpads_parent') { $p=$r['kind']==='creative'?HPADS_Workflow::owner_record($r):HPADS_Core::get($r['parent_id']);echo esc_html($p['title'] ?? ''); }
+        if ($column==='hpads_parent' && $r['kind']==='company') { echo HPADS_Venue_Workspace::location_links($r['id']);return; }
+        if ($column==='hpads_parent' && $r['kind']==='location') { $v=HPADS_Core::get($r['parent_id'],'company');echo esc_html($v['title'] ?? '').'<br><a href="'.esc_url(HPADS_Venue_Workspace::url($r['id'])).'">Open venue dashboard</a>';return; }
+        if ($column==='hpads_parent') { $p=$r['kind']==='creative'?HPADS_Workflow::owner_record($r):HPADS_Core::get($r['parent_id']);$venue=$r['kind']==='device' && $p?HPADS_Core::get($p['parent_id'],'company'):null;echo esc_html(($venue?$venue['title'].' / ':'').($p['title'] ?? '')); }
+        if ($column==='hpads_state' && $r['kind']==='device') { echo (empty($r['data']['enabled'])?'Disabled · ':'').HPADS_Admin::status($r['id'],true);return; }
         if ($column==='hpads_state' && $r['kind']==='company') { echo empty($r['data']['active']) && isset($r['data']['active'])?'Inactive':'Active';return; }
         if ($column==='hpads_state') { echo esc_html($r['kind']==='creative'?(HPADS_Placements::is_template($r)?'Template':HPADS_Workflow::summary($r)):(!empty($r['data']['published_version'])?'Published version #'.$r['data']['published_version']:'')); }
     }
+    static function template_upload($views) {
+        if (HPADS_Storage::active()) { HPADS_Placements::template_upload_panel(); }
+        return $views;
+    }
     static function upload_panel($type,$which='top') {
         if ($which!=='top') { return; }
-        if ($type==='hpads_playlist') { echo '<a class="button" href="'.esc_url(add_query_arg('post_type','hpads_placement',admin_url('edit.php'))).'">All Ad Placements</a> '; }
-        if ($type==='hpads_template' && HPADS_Storage::active()) { HPADS_Placements::template_upload_panel(); }
-        if ($type==='hpads_placement') { echo '<label><input type="checkbox" name="show_past" value="1" '.checked(!empty($_GET['show_past']),true,false).'> Include past/inactive placements</label>'; }
+        if ($type==='hpads_playlist') { echo '<a class="button" href="'.esc_url(HPADS_Ad_Library::url()).'">Ads</a> '; }
+        if ($type==='hpads_placement' && HPADS_Ad_Library::active()) { echo '<input type="hidden" name="hwads_ads" value="'.esc_attr(HPADS_Ad_Library::tab()).'">'; }
+        if ($type==='hpads_placement') { echo '<label>Approval <select name="approval_filter"><option value="">All approval statuses</option>';foreach (['pending'=>'Pending approval','approved'=>'Approved','rejected'=>'Changes requested','draft'=>'Not submitted / resubmit','setup'=>'Venue setup needed'] as $key=>$label) { echo '<option value="'.esc_attr($key).'" '.selected(sanitize_key($_GET['approval_filter'] ?? ''),$key,false).'>'.esc_html($label).'</option>'; }echo '</select></label> ';if (!HPADS_Ad_Library::active()) echo '<label><input type="checkbox" name="show_past" value="1" '.checked(!empty($_GET['show_past']),true,false).'> Include past/inactive placements</label>'; }
     }
     static function notice() {
         if (HPADS_Storage::active() || !HPADS_Workflow::global_admin()) { return; }

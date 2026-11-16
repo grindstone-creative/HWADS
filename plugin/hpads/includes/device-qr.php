@@ -22,7 +22,7 @@ final class HPADS_Device_QR {
         $id=absint($_GET['device_id'] ?? 0); $target=self::destination($id);
         if (is_wp_error($target)) {
             if (($target->get_error_data()['status'] ?? 0)===401) {
-                wp_safe_redirect(self::login_url($id)); exit;
+                HPADS_Public_Device::page(); exit;
             }
             wp_die(esc_html($target->get_error_message()),'HWADS',['response'=>403]);
         }

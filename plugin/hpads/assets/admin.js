@@ -65,12 +65,14 @@
         let changed=false; draft.form.addEventListener('input',()=>{changed=true;}); draft.form.addEventListener('change',()=>{changed=true;});
         action.form.addEventListener('submit',event=>{if(changed || (window.tinymce && tinymce.get('hpads_description') && tinymce.get('hpads_description').isDirty())){event.preventDefault();window.alert('Save your placement edits before submitting or copying this entry.');}});
     });
+    function initTemplateUpload(){
     const templateDrop=document.getElementById('hpads-template-drop'),templateFiles=document.getElementById('hpads-template-files');
-    if(templateDrop && templateFiles){
+    if(templateDrop && templateFiles && !templateDrop.dataset.hwadsBound){
+        templateDrop.dataset.hwadsBound='1';
         let uploading=false;
         const status=document.getElementById('hpads-template-upload-status'),results=document.getElementById('hpads-template-upload-results');
         async function uploadTemplates(files){
-            if(uploading)return;uploading=true;
+            if(uploading)return;uploading=true;document.dispatchEvent(new CustomEvent('hwads:template-upload',{detail:{uploading:true}}));
             const owner=document.getElementById('hpads-template-owner').value,orientation=document.getElementById('hpads-template-orientation').value;
             try{for(const file of files){
                 if(file.size>Number(templateFiles.dataset.maxBytes)){status.textContent=file.name+': exceeds the server upload limit.';break;}
@@ -80,18 +82,22 @@
                 if(!response.ok || !result.success)throw new Error(file.name+': '+(result.data && result.data.message || 'Upload failed.'));
                 const li=document.createElement('li'),a=document.createElement('a');a.href=result.data.edit;a.textContent=result.data.title+' — Edit template';li.append(a);results.append(li);
                 status.textContent='Template created. Edit it above, or refresh the list when uploads finish.';
-            }}catch(error){status.textContent=error.message;}finally{uploading=false;templateFiles.value='';}
+            }}catch(error){status.textContent=error.message;}finally{uploading=false;templateFiles.value='';document.dispatchEvent(new CustomEvent('hwads:template-upload',{detail:{uploading:false}}));}
         }
         templateDrop.addEventListener('click',()=>templateFiles.click());templateDrop.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();templateFiles.click();}});
         templateFiles.addEventListener('change',()=>uploadTemplates(Array.from(templateFiles.files)));
         templateDrop.addEventListener('dragover',e=>{e.preventDefault();});templateDrop.addEventListener('drop',e=>{e.preventDefault();uploadTemplates(Array.from(e.dataTransfer.files));});
     }
+    }
+    initTemplateUpload();document.addEventListener('hwads:venue-panel',initTemplateUpload);
     const editor = document.getElementById('hpads-playlist');
     if (!editor) return;
     const form = editor.closest('form');
     const hidden = document.getElementById('hpads-items');
     const media = JSON.parse(editor.dataset.media);
     const defaultDuration=Number(editor.dataset.defaultDuration || 10);
+    const maxItems=Number(editor.dataset.maxItems||100);
+    const hasRoom=()=>editor.querySelectorAll('.hpads-item').length<maxItems;
     const bound = JSON.parse(editor.dataset.bound || '{}');
     const available = Object.entries(media).filter(([id])=>Number(id)>0);
     const addButton = document.getElementById('hpads-add-item');
@@ -100,11 +106,26 @@
     emptyMessage.setAttribute('role','status');
     const savedRotation = Number(form.querySelector('input[name="id"]').value)>0;
     emptyMessage.textContent = savedRotation
-        ? 'No placements exist for this playlist yet. Use “Add New Placement for This Playlist” above. You can start from a template in My Ad Templates; it creates a new independent placement.'
+        ? 'Choose an ad template, upload a file, or use the Media Library to add your first placement.'
         : 'Save this playlist with its location first, then create a placement for it.';
-    emptyMessage.hidden = available.length>0;
+    emptyMessage.hidden = JSON.parse(editor.dataset.items).length>0;
     editor.before(emptyMessage);
-    addButton.disabled = available.length===0;
+    addButton.disabled = !savedRotation;
+    const picker=document.getElementById('hpads-playlist-template');
+    const importPanel=document.getElementById('hpads-placement-picker');
+    const existing=document.getElementById('hpads-existing-placement');
+    const restore=document.getElementById('hpads-restore-placement');
+    function refreshExisting() {
+        if(!existing)return;
+        const used=Array.from(editor.querySelectorAll('select.creative')).map(el=>el.value);
+        Array.from(existing.options).forEach(option=>{option.hidden=used.includes(option.value);});
+        if(used.includes(existing.value))existing.value='';
+        restore.disabled=!existing.value||!hasRoom();
+    }
+    if(existing) {
+        existing.addEventListener('change',refreshExisting);
+        restore.addEventListener('click',()=>{if(!existing.value||!hasRoom())return;row({creative_id:Number(existing.value),active:true});emptyMessage.hidden=true;dirty=true;});
+    }
     let dirty = false, importing = false;
     const status=document.getElementById('hpads-import-status');
     function input(type, value, label) {
@@ -129,7 +150,9 @@
         const edit=document.createElement('a');edit.className='button';edit.textContent='Edit Placement';
         const duplicate=button('Duplicate','Duplicate placement',()=>createPlacement({source_id:select.value}));
         const select = document.createElement('select'); select.className = 'creative'; select.setAttribute('aria-label', 'Placement');
-        available.forEach(([id, name]) => { if (+id) { const o = document.createElement('option'); o.value = id; o.textContent = name; select.append(o); } });
+        // A card edits one independent placement; templates are chosen in the add panel.
+        if (media[item.creative_id]) select.add(new Option(media[item.creative_id],String(item.creative_id)));
+        select.disabled=true;
         if (item.creative_id && !media[item.creative_id]) { const o = document.createElement('option'); o.value = item.creative_id; o.textContent = 'Unavailable placement #' + item.creative_id; select.append(o); }
         if(!select.options.length) {
             const option=document.createElement('option'); option.value=''; option.textContent='No placements available for this playlist'; select.append(option); select.disabled=true;
@@ -148,41 +171,41 @@
         el.append(labeled('Placement', select), labeled('Placement name',placementTitle), labeled('Seconds', duration), inherited, activeLabel, labeled('Start', start), labeled('End', end));
         el.append(button('↑', 'Move item up', () => { if (el.previousElementSibling) editor.insertBefore(el, el.previousElementSibling); dirty = true; }));
         el.append(button('↓', 'Move item down', () => { if (el.nextElementSibling) editor.insertBefore(el.nextElementSibling, el); dirty = true; }));
-        const remove=button('Remove', 'Remove item', () => { el.remove(); dirty = true; });
+        const remove=button('Remove', 'Remove item', () => { el.remove(); refreshExisting(); emptyMessage.hidden=editor.children.length>0; dirty = true; });
         const external=input('url','','External URL (optional)');external.className='link-url';
         const qr=input('checkbox',false,'Show QR Code');qr.className='qr-enabled';const qrLabel=document.createElement('label');qrLabel.append(qr,' Show QR Code');
         function transitionField(cls,label){const select=document.createElement('select');select.className=cls;Object.entries(window.HPADSAdmin && HPADSAdmin.transitions || {none:'None',fade:'Fade','slide-left':'Slide left'}).forEach(([value,text])=>select.add(new Option(text,value)));el.append(labeled(label,select));return select;}
         const tin=transitionField('transition-in','Entrance'),tout=transitionField('transition-out','Exit');
         el.append(labeled('External URL (optional)',external),qrLabel);
         const templateEdit=document.createElement('a');templateEdit.textContent='Edit Source Template';templateEdit.target='_blank';templateEdit.rel='noopener';el.append(templateEdit);
-        [start,end].forEach(control=>{const calendar=button('Calendar','Choose '+(control===start?'start':'end')+' date',()=>{try{control.showPicker();}catch{control.focus();}});control.after(calendar);});
         function entryValues() {
             const data=bound[select.value];
             placementTitle.value=data && data.title || '';placementTitle.readOnly=!!data && data.editable===false;
             el.dataset.revision=data?data.revision:'';external.value=data && data.link_url || '';qr.checked=!!(data && data.qr_enabled);tin.value=data && data.transition_in || 'none';tout.value=data && data.transition_out || 'none';templateEdit.hidden=!(data && data.template_edit);if(data && data.template_edit)templateEdit.href=data.template_edit;
+            el.dataset.card=JSON.stringify(data||{});el.dataset.visuals=JSON.stringify(data?.overlays||[]);el.dataset.qrLayout=JSON.stringify(data?.qr_layout||{size:15,x:82,y:70});el.dataset.thumbnailTime=data?.thumbnail_time??1;
             preview.replaceChildren(); if(data && data.preview) { const media=document.createElement(data.video?'video':'img');media.src=data.preview;if(data.video){media.controls=true;media.preload='none';}else{media.alt=data.title || '';}preview.append(media); }
             edit.hidden=!data || !data.edit; if(data && data.edit) edit.href=data.edit;duplicate.disabled=!data;
             el.append(edit,duplicate,remove);
             [duration,start,end].forEach(control=>{control.readOnly=false;});
-            if(data) { durationState(data.duration);start.value=data.start || '';end.value=data.end || '';duration.title='Clear to restore the inherited default.';start.title=end.title='Timezone: '+(window.HPADSAdmin && HPADSAdmin.timezone || 'WordPress site timezone'); }
+            if(data) { active.checked=!!data.active;durationState(data.duration);start.value=data.start || '';end.value=data.end || '';duration.title='Clear to restore the inherited default.';start.title=end.title='Timezone: '+(window.HPADSAdmin && HPADSAdmin.timezone || 'WordPress site timezone'); }
         }
         select.addEventListener('change',entryValues); entryValues();
-        editor.append(el);
+        editor.append(el);refreshExisting();
     }
     async function createPlacement(values,file) {
+        if(!hasRoom()){if(status)status.textContent='This playlist has reached its 100-placement total limit. Remove a placement to add another.';return false;}
         if(importing) return;
         importing=true;
         if(status) status.textContent='Creating placement…';
         try {
-            const body=new FormData();body.set('action','hpads_playlist_create');body.set('nonce',HPADSAdmin.createNonce);
+            const body=new FormData();if(values.source_id&&!values.owner)values.owner=form.querySelector('[name="upload_owner"]')?.value||'';body.set('action','hpads_playlist_create');body.set('nonce',HPADSAdmin.createNonce);
             body.set('rotation_id',form.querySelector('input[name="id"]').value);
             Object.entries(values).forEach(([k,v])=>body.set(k,v));if(file)body.set('media',file);
             const response=await fetch(HPADSAdmin.ajaxUrl,{method:'POST',credentials:'same-origin',body});const result=await response.json();
             if(!response.ok || !result.success) throw new Error(result.data && result.data.message || 'Could not create placement.');
-            const data=result.data;media[data.id]=data.title;bound[data.id]=data;available.push([String(data.id),data.title]);
-            editor.querySelectorAll('select.creative').forEach(select=>select.add(new Option(data.title,String(data.id))));
+            const data=result.data;if(data.active&&window.HWADSPlaylistCapacity&&!window.HWADSPlaylistCapacity())data.active=false;media[data.id]=data.title;bound[data.id]=data;available.push([String(data.id),data.title]);
             row({creative_id:data.id,active:true});dirty=true;addButton.disabled=false;emptyMessage.hidden=true;
-            if(status)status.textContent='Placement created. Save Draft to keep the playlist order.';
+            if(status)status.textContent=data.active?'Placement added. Save or Update the playlist to keep your changes.':'Placement added inactive because the active limit is full. Adjust its schedule or free an active slot, then save the playlist.';
             return true;
         }catch(error){if(status)status.textContent=error.message;return false;}
         finally{importing=false;}
@@ -211,12 +234,20 @@
         ['dragenter','dragover'].forEach(type=>drop.addEventListener(type,e=>{e.preventDefault();drop.classList.add('is-dragging');}));
         drop.addEventListener('dragleave',()=>drop.classList.remove('is-dragging'));
         drop.addEventListener('drop',e=>{e.preventDefault();drop.classList.remove('is-dragging');uploadFiles(Array.from(e.dataTransfer.files));});
-        document.getElementById('hpads-copy-template').addEventListener('click',()=>{const id=document.getElementById('hpads-playlist-template').value;if(id && !batch)createPlacement({source_id:id});});
+        const copy=document.getElementById('hpads-copy-template');
+        copy.disabled=!picker.value;
+        picker.addEventListener('change',()=>{copy.disabled=!picker.value;});
+        copy.addEventListener('click',async()=>{if(!picker.value || batch || importing)return;copy.disabled=true;try{await createPlacement({source_id:picker.value});}finally{copy.disabled=!picker.value;}});
     }
     form.addEventListener('submit',event=>{if(importing || batch){event.preventDefault();if(status)status.textContent='Wait for uploads to finish before saving.';}});
-    JSON.parse(editor.dataset.items).forEach(row);
+    JSON.parse(editor.dataset.items).forEach(row);refreshExisting();
     $(editor).sortable({handle: '.hpads-handle', update: () => { dirty = true; }});
-    addButton.addEventListener('click', () => { if(!available.length) return; row({active: true}); dirty = true; });
+    addButton.addEventListener('click', () => {
+        if(!importPanel)return;
+        importPanel.scrollIntoView({behavior:'smooth',block:'center'});
+        if(picker && picker.options.length>1)picker.focus();
+        else document.getElementById('hpads-library-media').focus();
+    });
     form.addEventListener('input', () => { dirty = true; });
     form.addEventListener('change', () => { dirty = true; });
     form.addEventListener('submit', event => {
@@ -226,7 +257,7 @@
             duration: el.querySelector('.duration').dataset.inherited==='true'?'':el.querySelector('.duration').value,
             active: el.querySelector('.active').checked,
             start: el.querySelector('.start').value,
-            end: el.querySelector('.end').value,revision:Number(el.dataset.revision),link_url:el.querySelector('.link-url').value,qr_enabled:el.querySelector('.qr-enabled').checked,transition_in:el.querySelector('.transition-in').value,transition_out:el.querySelector('.transition-out').value
+            end: el.querySelector('.end').value,revision:Number(el.dataset.revision),link_url:el.querySelector('.link-url').value,qr_enabled:el.querySelector('.qr-enabled').checked,transition_in:el.querySelector('.transition-in').value,transition_out:el.querySelector('.transition-out').value,overlays:JSON.parse(el.dataset.visuals||'[]'),qr_layout:JSON.parse(el.dataset.qrLayout||'{}'),thumbnail_time:Number(el.dataset.thumbnailTime||1)
         })));
         dirty = false;
     });

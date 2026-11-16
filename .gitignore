@@ -11,3 +11,9 @@ uploads/
 
 __pycache__/
 *.pyc
+
+# Generated browser screenshots and local development captures
+tests/*.png
+# Build packages are reproducible; retain existing tracked archives only.
+dist/*.zip
+dist/hwads-pi/

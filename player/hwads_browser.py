@@ -17,7 +17,8 @@ import threading
 import time
 import urllib.parse
 from hwads_sync import atomic_json
-from hwads_player import items, media_path
+from hwads_sync import Recorder
+from hwads_player import items, media_path, PlaybackMixer
 
 STOP = threading.Event()
 
@@ -25,10 +26,16 @@ class LocalServer(ThreadingHTTPServer):
     daemon_threads = True
     def __init__(self, root, assets):
         self.root, self.assets = root, assets
+        self.analytics = Recorder(root)
+        self.mixer = PlaybackMixer(root)
         self.token = secrets.token_urlsafe(24)
         self.last_ping = time.monotonic()
         self.started = self.last_ping
         super().__init__(('127.0.0.1', 0), Handler)
+
+    def server_close(self):
+        self.analytics.close()
+        super().server_close()
 
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *_):
@@ -59,26 +66,29 @@ class Handler(BaseHTTPRequestHandler):
             return
         if route == 'playlist':
             rows = items(self.server.root)
-            output = []
-            for row in rows:
-                # No config, API key, remote media URL or device-settings QR exposed to the browser.
-                output.append({k: row.get(k) for k in ('file','type','duration','start_utc','end_utc','placement_id','revision','version_id','transition_in','transition_out','qr_enabled','qr_url')})
-                output[-1]['url'] = 'media/' + urllib.parse.quote(row['file'], safe='')
+            output = [self.row_output(row) for row in rows]
             self.send(json.dumps(output).encode())
             return
         if route.startswith('media/'):
             name = route[len('media/'):]
-            matches = [x for x in items(self.server.root) if x['file'] == name]
+            rows = items(self.server.root, include_fallback=True)
+            assets = rows + [o for row in rows for o in row.get('overlays',[]) if o.get('file')]
+            matches = [x for x in assets if x['file'] == name]
             if not matches:
                 self.send(b'', 'text/plain', 404)
                 return
             self.serve_file(media_path(self.server.root, matches[0]), ranges=True)
             return
         name = 'index.html' if route == '' else route
-        if name not in ('index.html','player.js','player.css','vendor/qrcodegen.js'):
+        if name not in ('index.html','player.js','player.css','overlays.js','overlays.css','vendor/qrcodegen.js'):
             self.send(b'', 'text/plain', 404)
             return
         self.serve_file(self.server.assets / name)
+    def row_output(self, row):
+        value={k:row.get(k) for k in ('file','type','duration','start_utc','end_utc','placement_id','version_id','analytics_grant','transition_in','transition_out','qr_enabled','qr_url','qr_layout','overlays','width','height','mix_group','mix_weight','mix_signature','mix_fallback')}
+        value['url']='media/'+urllib.parse.quote(row['file'],safe='')
+        value['overlays']=[dict(o,**({'url':'media/'+urllib.parse.quote(o['file'],safe='')} if o.get('file') else {})) for o in row.get('overlays',[])]
+        return value
     def serve_file(self, path, ranges=False):
         try:
             size = path.stat().st_size
@@ -115,15 +125,25 @@ class Handler(BaseHTTPRequestHandler):
         except (OSError, BrokenPipeError):
             pass
     def do_POST(self):
-        if self.route() != 'status':
+        route = self.route()
+        if route not in ('status', 'events', 'next'):
             self.send(b'', 'text/plain', 404);return
         expected = 'http://127.0.0.1:' + str(self.server.server_port)
         if self.headers.get('Origin') != expected:
             self.send(b'', 'text/plain', 403);return
         try:
             length=int(self.headers.get('Content-Length','0'))
-            if length<=0 or length>2048:raise ValueError()
+            if length<=0 or length>(8192 if route=='events' else 2048):raise ValueError()
             data=json.loads(self.rfile.read(length))
+            if route == 'next':
+                row,token=self.server.mixer.select(items(self.server.root,include_fallback=True),
+                    previous=str(data.get('previous',''))[:64],elapsed=data.get('elapsed',0),navigation=-1 if data.get('navigation')==-1 else 1,
+                    request_id=str(data.get('request_id',''))[:64],failed=data.get('failed') is True)
+                self.send(json.dumps({'item':self.row_output(row) if row else None,'token':token}).encode());return
+            if route == 'events':
+                ok = self.server.analytics.submit(data)
+                self.send(b'{}', status=202 if ok else 503)
+                return
             status={'state':data.get('state') if data.get('state') in ('playing','idle','error') else 'idle',
                     'updated_at':time.time(),'version_id':max(0,int(data.get('version_id') or 0)),
                     'placement_id':max(0,int(data.get('placement_id') or 0)), 'engine':'browser',
@@ -153,7 +173,7 @@ def main():
         server=LocalServer(root,Path(__file__).parent/'browser')
         thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
         url='http://127.0.0.1:'+str(server.server_port)+'/'+server.token+'/'
-        command=[executable,'--kiosk','--no-first-run','--no-default-browser-check','--disable-session-crashed-bubble','--autoplay-policy=no-user-gesture-required',
+        command=[executable,'--password-store=basic','--kiosk','--no-first-run','--no-default-browser-check','--disable-session-crashed-bubble','--autoplay-policy=no-user-gesture-required',
                  '--user-data-dir='+str(root/'config/chromium-profile'),url]
         child=None;restarts=0
         try:

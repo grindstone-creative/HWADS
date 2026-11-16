@@ -1,8 +1,9 @@
 from pathlib import Path
-import zipfile
+import zipfile, re
 root=Path(__file__).resolve().parents[1]
 source=root/'plugin/hpads'
-target=root/'dist/hwads-0.9.1.zip'
+version=re.search(r"define\('HPADS_VERSION', '([^']+)'\)",(source/'hpads.php').read_text()).group(1)
+target=root/f'dist/hwads-{version}.zip'
 target.parent.mkdir(parents=True,exist_ok=True)
 with zipfile.ZipFile(target,'w',zipfile.ZIP_DEFLATED) as archive:
     for path in sorted(source.rglob('*')):

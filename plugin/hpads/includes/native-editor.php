@@ -5,9 +5,12 @@ final class HPADS_Native_Editor {
     const TYPES=['hpads_venue','hpads_location','hpads_device','hpads_advertiser','hpads_template','hpads_placement','hpads_playlist'];
     const CONFIG=['hpads_venue'=>'company','hpads_location'=>'location','hpads_device'=>'device','hpads_advertiser'=>'advertiser'];
     static $writing=false;
+    static $review_forms=[];
     static function init() {
         add_action('edit_form_after_title',[__CLASS__,'preview_top']);
+        add_filter('enter_title_here',[__CLASS__,'title_placeholder'],10,2);
         add_action('add_meta_boxes',[__CLASS__,'boxes']);
+        add_action('admin_footer',[__CLASS__,'review_forms']);
         add_action('save_post',[__CLASS__,'save'],20,3);
         add_filter('wp_insert_post_data',[__CLASS__,'validate'],20,4);
         add_filter('use_block_editor_for_post_type',[__CLASS__,'classic'],20,2);
@@ -16,6 +19,7 @@ final class HPADS_Native_Editor {
         add_action('post_submitbox_misc_actions',[__CLASS__,'sidebar']);
         add_filter('redirect_post_location',[__CLASS__,'redirect'],20,2);
     }
+    static function title_placeholder($placeholder,$post) { return ['hpads_placement'=>'Placement name','hpads_template'=>'Template name'][$post->post_type] ?? $placeholder; }
     static function notices() {
         $screen=get_current_screen();if (!$screen || $screen->post_type!=='hpads_device') { return; }
         $key=get_transient('hpads_key_'.get_current_user_id());if (!$key || !preg_match('/Device #(\d+):/',$key,$match) || !HPADS_Core::can(HPADS_Core::get((int)$match[1],'device'),true)) { return; }
@@ -28,21 +32,52 @@ final class HPADS_Native_Editor {
     static function assets() {
         $s=get_current_screen();if (!$s || !self::supports($s->post_type) || $s->base!=='post') { return; }
         wp_enqueue_media();HPADS_Admin::assets('hpads-native');
+        if (in_array($s->post_type,['hpads_location','hpads_device'],true)) { wp_enqueue_script('hwads-playback-mix',plugins_url('assets/playback-mix.js',HPADS_FILE),[],HPADS_VERSION,true); }
         if ($s->post_type==='hpads_device') { wp_enqueue_script('hpads-qr-library',plugins_url('assets/vendor/qrcodegen.js',HPADS_FILE),[],HPADS_VERSION,true);wp_enqueue_script('hpads-device-qr',plugins_url('assets/device-qr.js',HPADS_FILE),['hpads-qr-library'],HPADS_VERSION,true); }
+        wp_enqueue_script('hpads-qr-library',plugins_url('assets/vendor/qrcodegen.js',HPADS_FILE),[],HPADS_VERSION,true);
+        wp_enqueue_style('hwads-overlays',plugins_url('assets/overlays.css',HPADS_FILE),[],HPADS_VERSION);
+        wp_enqueue_script('hwads-overlays',plugins_url('assets/overlays.js',HPADS_FILE),['hpads-qr-library'],HPADS_VERSION,true);
+        if (in_array($s->post_type,['hpads_playlist','hpads_template','hpads_placement'],true)) {
+            wp_enqueue_script('hwads-single-workspace',plugins_url('assets/single-workspace.js',HPADS_FILE),['hwads-native','hwads-overlays'],HPADS_VERSION,true);
+            wp_enqueue_style('hwads-workspace',plugins_url('assets/workspace.css',HPADS_FILE),['hpads','hwads-overlays'],HPADS_VERSION);
+            wp_enqueue_script('hwads-workspace',plugins_url('assets/workspace.js',HPADS_FILE),['hpads','hwads-overlays','hwads-single-workspace','jquery-ui-sortable'],HPADS_VERSION,true);
+        }
         wp_enqueue_script('hwads-native',plugins_url('assets/native-editor.js',HPADS_FILE),['hpads'],HPADS_VERSION,true);
-        $labels=['hpads_venue'=>'Save Venue','hpads_location'=>'Save Location','hpads_device'=>'Save Device','hpads_advertiser'=>'Save Advertiser'];wp_localize_script('hwads-native','HWADSNative',['saveLabel'=>$labels[$s->post_type] ?? 'Save Draft','postType'=>$s->post_type]);
+        $labels=['hpads_venue'=>'Save Venue','hpads_location'=>'Save Location','hpads_device'=>'Save Device','hpads_advertiser'=>'Save Advertiser'];wp_localize_script('hwads-native','HWADSNative',['saveLabel'=>$labels[$s->post_type] ?? (in_array($s->post_type,['hpads_placement','hpads_template'],true)?'Save Changes':'Save Draft'),'postType'=>$s->post_type]);
     }
     static function boxes($type) {
         if (!self::supports($type)) { return; }
         global $wp_meta_boxes;if (isset($wp_meta_boxes[$type]['side']['core']['submitdiv'])) { $wp_meta_boxes[$type]['side']['core']['submitdiv']['title']='Save'; }
+        if ($type==='hpads_placement') { add_meta_box('hwads-approvals','Ad Approvals',[__CLASS__,'approvals'],$type,'normal','default'); }
         if ($type==='hpads_playlist') { add_meta_box('hwads-playlist-settings','Playlist Settings',[__CLASS__,'playlist_settings'],$type,'side','default'); }
         if (in_array($type,['hpads_playlist','hpads_placement'],true)) { add_meta_box('hwads-embed','Shortcode & Embed Code',['HPADS_Embeds','box'],$type,'side','low'); }
-        add_meta_box('hwads-details',$type==='hpads_playlist'?'Playlist Details & Placements':(isset(self::CONFIG[$type])?HPADS_Admin::PAGES[self::CONFIG[$type]].' Details':'Ad Details'),[__CLASS__,'details'],$type,'normal','high');
+        add_meta_box('hwads-details',$type==='hpads_playlist'?'Playlist Details':(isset(self::CONFIG[$type])?HPADS_Admin::PAGES[self::CONFIG[$type]].' Details':'Ad Details'),[__CLASS__,'details'],$type,$type==='hpads_venue'?'side':'normal',$type==='hpads_venue'?'default':'high');
+    }
+    /** Review submissions use separate forms, never nested inside WordPress's post form. */
+    static function approvals($post) {
+        $r=self::record($post->ID);
+        if (!$r) { echo '<p>Save this placement before submitting it for approval.</p>';return; }
+        if (!HPADS_Workflow::can_ad($r)) { return; }
+        echo '<p><strong>'.esc_html(HPADS_Workflow::summary($r)).'</strong> · Content revision '.(int)($r['data']['content_revision'] ?? 1).'</p><p class="description">Review actions apply to the last saved revision. Save your edits before submitting or reviewing. Approval does not publish a playlist.</p>';
+        ob_start();HPADS_Ads::controls($r);$html=ob_get_clean();
+        $html=preg_replace_callback('~<form\b([^>]*)>(.*?)</form>~s',function($m) {
+            $id='hwads-review-'.(count(self::$review_forms)+1);
+            self::$review_forms[$id]=$m[1];
+            $body=preg_replace('~<(input|textarea|select|button)\b~','<$1 form="'.$id.'"',$m[2]);
+            return '<div class="hwads-review-action">'.$body.'</div>';
+        },$html);
+        echo $html;
+    }
+    static function review_forms() {
+        foreach (self::$review_forms as $id=>$attributes) { echo '<form id="'.esc_attr($id).'" '.$attributes.'></form>'; }
+        self::$review_forms=[];
     }
     static function playlist_settings($post) {
         $r=self::record($post->ID);$d=$r['data'] ?? [];
-        HPADS_Admin::select('Location','parent_id',HPADS_Admin::choices('location'),$r['parent_id'] ?? 0);
+        HPADS_Admin::select('Location','parent_id',HPADS_Admin::choices('location'),$r['parent_id'] ?? absint($_GET['location_id'] ?? 0));
         HPADS_Admin::select('Purpose','purpose',['primary'=>'Primary','house'=>'House / placeholder'],$d['purpose'] ?? (HPADS_Workflow::venue_admin()&&!HPADS_Core::staff()?'house':'primary'));
+        HPADS_Admin::select('Content type','category',HPADS_Playlist_Limits::TYPES,HPADS_Playlist_Limits::category(['data'=>$d]));
+        HPADS_Admin::field('Maximum active placements','active_limit',HPADS_Playlist_Limits::cap(['data'=>$d]),'number','1–100. Counts Active switches, including scheduled or expired slides. This playlist can hold 100 placements total.');
     }
     static function context($post) {
         $r=self::record($post->ID);$source=null;
@@ -51,13 +86,24 @@ final class HPADS_Native_Editor {
         return [$r,$d,$source];
     }
     static function preview_top($post) {
-        if ($post->post_type==='hpads_playlist') { $r=self::record($post->ID);echo '<div class="hwads-placement-preview"><h2>Playlist Preview</h2>';if ($r) { $url=add_query_arg(['action'=>'hpads_playlist_preview','id'=>$r['id']],admin_url('admin-post.php'));echo '<iframe id="hwads-inline-playlist" title="Saved playlist preview" src="'.esc_url($url).'" allow="autoplay; fullscreen" allowfullscreen></iframe><p>Saved draft preview. Save your changes before refreshing. <button class="button" type="button" id="hwads-refresh-preview">Refresh Preview</button></p>'; }else { echo '<p>Save the playlist with its location first. Its preview will appear here after placements have been added and saved.</p>'; }echo '</div>';return; }
+        if ($post->post_type==='hpads_playlist') { echo '<div id="hwads-workspace-mount"></div>';return; }
         if (!in_array($post->post_type,['hpads_template','hpads_placement'],true)) { return; }
         [$r,$d,$source]=self::context($post);$aid=(int)($d['attachment_id'] ?? 0);$url=$aid?wp_get_attachment_url($aid):'';
-        echo '<div class="hwads-placement-preview"><div id="hwads-native-preview">';
+        $parent_playlist=HPADS_Core::get($d['rotation_id'] ?? 0,'playlist');$counts=$parent_playlist?HPADS_Playlist_Limits::stats(HPADS_Playlist_Limits::rows($parent_playlist)):['active'=>0];
+        $card=array_merge(HPADS_Visuals::payload($d),['active_limit'=>$parent_playlist?HPADS_Playlist_Limits::cap($parent_playlist):15,'playlist_active'=>$counts['active'],'content_only'=>HPADS_Content_Access::designer() || ($r && !HPADS_Placements::author_owner(...HPADS_Workflow::owner_ref($r)) && HPADS_Content_Access::grant($r,true)),'original_active'=>!empty($d['active'])],['default_duration'=>HPADS_Core::inherited_duration($r ?: ['data'=>$d]),'id'=>(int)($r['id'] ?? 0),'title'=>$r['title'] ?? $post->post_title,'preview'=>$url,'video'=>strpos((string)get_post_mime_type($aid),'video/')===0,'width'=>$d['width'] ?? 1920,'height'=>$d['height'] ?? 1080,'qr_url'=>$post->post_type==='hpads_placement' && $r?HPADS_Placements::public_url($r['id']):home_url('/')]);
+        echo '<div id="hwads-workspace-mount" data-single="'.($post->post_type==='hpads_template'?'template':'placement').'" data-card="'.esc_attr(wp_json_encode($card)).'"></div>';
+        echo '<div class="hwads-placement-preview hwads-legacy-preview" hidden><div id="hwads-native-preview">';
         if ($url) { echo strpos((string)get_post_mime_type($aid),'video/')===0?'<video controls preload="metadata" src="'.esc_url($url).'"></video>':'<img src="'.esc_url($url).'" alt="'.esc_attr($d['media_alt'] ?? '').'">'; }
         else { echo '<p>Choose media in the details card below to preview this ad.</p>'; }
-        echo '</div></div><h2>Landing Page Content</h2><p>Use the Visual / Code editor below for this ad’s landing-page content.</p>';
+        $base=HPADS_Landing_Layout::base();if ($base && empty($d['landing_layout_custom']) && get_post_meta($post->ID,'_et_pb_use_builder',true)!=='on') { echo '<p>Landing-page layout: <strong>'.esc_html($base->post_title).'</strong>. Add ad text in the editor below; the shared page supplies its design.</p>'; }
+        echo '</div></div>';
+        $builder_pid=$source?HPADS_Storage::post_id($source['id']):$post->ID;$text=$d['landing_text'] ?? (get_post_meta($builder_pid,'_et_pb_use_builder',true)==='on'?'':($d['description'] ?? ''));
+        echo '<section class="hwads-landing-content postbox"><h2>Landing page content</h2><div class="inside"><input type="hidden" name="hwads[landing_options]" value="1"><div class="hwads-landing-toggles">';
+        HPADS_Admin::check('Show ad placement on page','hwads[show_ad_on_page]',$d['show_ad_on_page'] ?? true);HPADS_Admin::check('Show page title','hwads[show_page_title]',$d['show_page_title'] ?? true);
+        echo '</div><p class="description">These options affect the landing page only. In custom layouts, use the ad/title shortcodes so these switches can control them.</p><h3>Landing page main text</h3>';
+        wp_editor($text,'hwads_landing_text',['textarea_name'=>'hwads[landing_text]','textarea_rows'=>6,'media_buttons'=>false,'teeny'=>true,'quicktags'=>true]);
+        echo '<p class="description">This text appears wherever <code>[hwads_ad_content]</code> is placed in the layout. The shared base page can supply the design.</p></div></section><h2>Landing page layout</h2><p>Use the existing editor or Divi Builder below when you want to change the design. Front-end editing is optional.</p>';
+        if ($r && HPADS_Divi::available()) { echo '<p><a class="button" href="'.esc_url(HPADS_Divi::url($post->ID)).'">Edit Landing Page with Divi</a> <span>Save changes here before opening Divi.</span></p>'; }
     }
     static function details($post) {
         [$r,$d,$source]=self::context($post);
@@ -73,10 +119,11 @@ final class HPADS_Native_Editor {
             ob_start();HPADS_Admin::editor('playlist',(int)($r['id'] ?? 0));$html=ob_get_clean();
             if (preg_match('~<fieldset[^>]*>(.*?)</fieldset></form>~s',$html,$m)) {
                 $body=preg_replace('~<p><label><strong>Name</strong>.*?</p>~s','',$m[1],1);
-                $body=preg_replace('~<p><label><strong>(?:Location|Purpose)</strong>.*?</p>~s','',$body);$body=preg_replace('~<p class="submit">.*?</p>~s','',$body);$body=preg_replace('~<p><a[^>]*href="[^"]*hpads_playlist_preview[^"]*"[^>]*>Preview Playlist</a></p>~','',$body);
+                $body=preg_replace('~<p><label><strong>(?:Location|Purpose|Content type|Maximum active placements)</strong>.*?</p>~s','',$body);$body=preg_replace('~<p class="submit">.*?</p>~s','',$body);$body=preg_replace('~<p><a[^>]*href="[^"]*hpads_playlist_preview[^"]*"[^>]*>Preview Playlist</a></p>~','',$body);
                 echo $body;
             }
-            echo '<p class="description">This playlist contains placement cards only. Edit web content on the ad template or placement. Save Draft stores the bucket; Publish to Players is separate.</p>';return;
+            echo '<div class="hwads-playlist-summary"><p><label for="hwads-playlist-description"><strong>Description</strong></label></p><textarea id="hwads-playlist-description" name="playlist_description" rows="3" class="widefat">'.esc_textarea($d['description'] ?? '').'</textarea><p>Choose a slide above to edit its settings. Drag thumbnails or use Move to arrange the playlist. Publish or Update makes the saved playlist live.</p></div>';
+            echo '<p class="description">This playlist contains placement cards only. Edit web content on the ad template or placement. Save Draft keeps your changes; Publish or Update makes the playlist live.</p>';return;
         }
         $mode=$post->post_type==='hpads_template'?'template':'placement';$owners=HPADS_Ads::owners(true);
         $owner=($r||$source)?implode(':',HPADS_Workflow::owner_ref($r?:$source)):sanitize_text_field($_GET['owner'] ?? '');
@@ -93,6 +140,7 @@ final class HPADS_Native_Editor {
         } else { $o=HPADS_Core::get((int)$oid,$type);echo '<p><strong>Owner:</strong> '.esc_html($o['title'] ?? 'Unavailable owner').'</p><input type="hidden" name="hwads[owner]" value="'.esc_attr($owner).'">'; }
 
         if ($source) { echo '<input type="hidden" name="hwads[source_template_id]" value="'.(int)$source['id'].'">'; }
+        if ($mode==='template') { $readonly_scope=$r && (HPADS_Content_Access::designer() || (!HPADS_Placements::author_owner($type,(int)$oid)&&HPADS_Content_Access::grant($r,true)));if($readonly_scope)echo '<fieldset disabled>';HPADS_Venue_Workspace::scope_fields(array_merge(['owner_type'=>$type,'owner_id'=>(int)$oid,'template_venue'=>$type==='company'?(int)$oid:0],$d),'hwads');if($readonly_scope)echo '</fieldset>'; }
         if ($mode==='placement') {
             if ($r) { echo '<p><strong>Playlist:</strong> '.esc_html($p['title'] ?? 'Unavailable playlist').'</p><input type="hidden" name="hwads[rotation_id]" value="'.$rotation.'">'; }
             else { HPADS_Admin::select('Playlist','hwads[rotation_id]',HPADS_Placements::rotations($type,(int)$oid),$rotation); }
@@ -140,19 +188,24 @@ final class HPADS_Native_Editor {
             if (!is_wp_error($result) && $key) { set_transient('hpads_key_'.get_current_user_id(),'Device #'.$result.': '.$key,120); }return $result;
         }
         if ($post->post_type==='hpads_playlist') {
-            $in=$raw;$in['revision']=absint($raw['hwads_revision'] ?? 0);$in['title']=$raw['post_title'] ?? $post->post_title;$in['description']=$raw['content'] ?? $post->post_content;
+            $in=$raw;$in['revision']=absint($raw['hwads_revision'] ?? 0);$in['title']=$raw['post_title'] ?? $post->post_title;$in['description']=$raw['playlist_description'] ?? $raw['content'] ?? $post->post_content;
             if ($r) { $result=HPADS_Placements::save_playlist($r,$in); }
             else {
                 $lid=absint($in['parent_id'] ?? 0);$l=HPADS_Core::get($lid,'location');$purpose=sanitize_key($in['purpose'] ?? 'primary');$candidate=['kind'=>'playlist','parent_id'=>$lid,'data'=>['purpose'=>$purpose]];
                 if (!$l || !in_array($purpose,['primary','house'],true) || !HPADS_Core::can($candidate,true) || !HPADS_Admin::can_add('playlist')) { return HPADS_Core::error('Choose an accessible playlist location.',403); }
-                $result=HPADS_Storage::put('playlist',sanitize_text_field($in['title']),$lid,['purpose'=>$purpose,'items'=>[],'description'=>$post->post_content],0,0,$pid);
+                $settings=HPADS_Playlist_Limits::settings($in,['purpose'=>$purpose]);if (is_wp_error($settings)) { return $settings; }
+                $result=HPADS_Storage::put('playlist',sanitize_text_field($in['title']),$lid,array_merge(['purpose'=>$purpose,'items'=>[],'description'=>$post->post_content],$settings),0,0,$pid);
             }
             if (!is_wp_error($result) && self::publishing($raw)) { $published=HPADS_Core::publish($result);if (is_wp_error($published)) { return $published; } }
             return $result;
         }
         $in=self::input($post,$raw);$values=HPADS_Placements::prepare($in,$r);if (is_wp_error($values)) { return $values; }
         if (!$values['title']) { return HPADS_Core::error('Enter an ad name.'); }
-        $result=HPADS_Storage::put('creative',$values['title'],$values['parent'],$values['data'],$r['id'] ?? 0,$r['revision'] ?? 0,$pid);
+        $result=HPADS_Playlist_Limits::locked($values['data']['rotation_id'] ?? 0,function() use($values,$r,$pid){
+            $limits=HPADS_Playlist_Limits::placement($r['id'] ?? 0,$values['data']);if (is_wp_error($limits)) { return $limits; }
+            return HPADS_Storage::put('creative',$values['title'],$values['parent'],$values['data'],$r['id'] ?? 0,$r['revision'] ?? 0,$pid);
+        });
+        if (!is_wp_error($result) && !$r && !empty($in['source_template_id'])) { HPADS_Divi::copy_meta(absint($in['source_template_id']),$result); }
         if (!is_wp_error($result) && ($raw['hwads_copy'] ?? '')==='template') { $copy=HPADS_Placements::copy(HPADS_Core::get($result),'template');if (!is_wp_error($copy)) { self::$redirect=HPADS_Native_Editor::url('hpads_template',$copy); } }
         return $result;
     }
@@ -164,7 +217,7 @@ final class HPADS_Native_Editor {
         if ($r && $parent!==(int)$r['parent_id']) { return HPADS_Core::error('The parent cannot be changed. Create a new record instead.'); }
         if (in_array($kind,['company','advertiser'],true)) {
             $parent=0;$d['email']=sanitize_email($in['email'] ?? '');
-            if ($kind==='company') { $d['active']=!empty($in['venue_active']); }
+            if ($kind==='company') { $d['active']=!empty($in['venue_active']);$d=HPADS_Approvals::save_policy($in,$r,$d);if (is_wp_error($d)) { return $d; } }
             else {
                 if (HPADS_Workflow::relations()) { $d['venues']=HPADS_Core::ids($in['venues'] ?? []);foreach ($d['venues'] as $cid) { if (!HPADS_Core::can(HPADS_Core::get($cid,'company'))) { return HPADS_Core::error('Venue outside your scope.',403); } } }
                 if (HPADS_Workflow::global_admin() || current_user_can('hpads_admin') || current_user_can('hpads_account_manager')) {
@@ -175,20 +228,23 @@ final class HPADS_Native_Editor {
         } else {
             $p=HPADS_Core::get($parent,$kind==='location'?'company':'location');if (!$p || !HPADS_Core::can($p)) { return HPADS_Core::error('Choose an accessible parent.',403); }
             if (!HPADS_Workflow::global_admin() && !current_user_can('hpads_admin') && !current_user_can('hpads_account_manager')) { return HPADS_Core::error('Location/device management requires account-manager access.',403); }
+            if ($kind==='location' && array_key_exists('address',$in)) { $address=sanitize_textarea_field($in['address']);if (strlen($address)>2000 || mb_strlen($address)>500) { return HPADS_Core::error('Location address must be 500 characters or fewer.'); }$d['address']=$address; }
             if ($kind==='location') { $duration=(int)($in['duration'] ?? 10);if ($duration<1 || $duration>3600) { return HPADS_Core::error('Duration must be 1–3600 seconds.'); }$d=array_merge($d,['duration'=>$duration,'approval_required'=>!empty($in['approval_required']),'allow_house'=>!empty($in['allow_house']),'house_rotation'=>!empty($in['house_rotation'])]); }
-            else { $type=sanitize_key($in['type'] ?? 'mixed');$orientation=sanitize_key($in['orientation'] ?? 'horizontal');if (!isset(HPADS_Core::TYPES[$type]) || !in_array($orientation,['horizontal','vertical'],true)) { return HPADS_Core::error('Choose a valid device type and orientation.'); }$d=array_merge($d,['type'=>$type,'orientation'=>$orientation,'custom_type'=>sanitize_text_field($in['custom_type'] ?? ''),'enabled'=>!empty($in['enabled'])]); }
+            else { $d=HPADS_Admin::expected_address_input($in,$d);if (is_wp_error($d)) { return $d; } $type=sanitize_key($in['type'] ?? 'mixed');$orientation=sanitize_key($in['orientation'] ?? 'horizontal');if (!isset(HPADS_Core::TYPES[$type]) || !in_array($orientation,['horizontal','vertical'],true)) { return HPADS_Core::error('Choose a valid device type and orientation.'); }$d=array_merge($d,['type'=>$type,'orientation'=>$orientation,'custom_type'=>sanitize_text_field($in['custom_type'] ?? ''),'enabled'=>!empty($in['enabled'])]); }
+            if ($kind==='device') { $d=HPADS_Admin::remote_access_input($in,$d);if (is_wp_error($d)) { return $d; } }
             foreach (['primary','house'] as $purpose) { $id=absint($in[$purpose.'_playlist'] ?? 0);if ($id) { $pl=HPADS_Core::get($id,'playlist');$lid=$kind==='location'?($r['id'] ?? 0):$parent;if (!$pl || !HPADS_Core::can($pl) || (int)$pl['parent_id']!==(int)$lid || ($pl['data']['purpose'] ?? '')!==$purpose) { return HPADS_Core::error('Playlist must match this location and purpose.'); } }$d[$purpose.'_playlist']=$id; }
         }
+        if (in_array($kind,['location','device'],true)) { $d=HPADS_Playback_Mix::save($kind,$in,$r,$d);if (is_wp_error($d)) { return $d; } }
         return ['title'=>$title,'parent'=>$parent,'data'=>$d];
     }
     static $redirect='';
     static function redirect($url,$pid) { return self::$redirect?:$url; }
     static function sidebar($post) {
         if (!self::supports($post->post_type)) { return; }$r=self::record($post->ID);
-        if (isset(self::CONFIG[$post->post_type])) { echo '<div class="misc-pub-section">Save makes this record available immediately. No approval or player-publication step is required.</div>';if ($r && $post->post_type==='hpads_device') { echo '<div class="misc-pub-section"><strong>Device status</strong><p>'.esc_html(HPADS_Admin::status($r['id'])).'</p></div>'; }return; }
-        if ($post->post_type!=='hpads_playlist') { echo '<div class="misc-pub-section">Save stores a draft. Publish the playlist separately to make placement changes live.</div>'; }
+        if (isset(self::CONFIG[$post->post_type])) { echo '<div class="misc-pub-section">Save makes this record available immediately. No approval or player-publication step is required.</div>';if ($r && $post->post_type==='hpads_device') { echo '<div class="misc-pub-section"><strong>Device status</strong><p>'.HPADS_Admin::status($r['id'],true).'</p></div>'; }return; }
+        if ($post->post_type!=='hpads_playlist') { echo '<div class="misc-pub-section">Changes go live when you publish or update the playlist.</div>'; }
 
         if ($r && $post->post_type==='hpads_template') { echo '<div class="misc-pub-section"><a class="button" target="_blank" rel="noopener" href="'.esc_url(HPADS_Placements::preview_url($r['id'])).'">Preview Ad Template</a><p>Private preview of the last saved template.</p></div>'; }
-        if ($r && $post->post_type==='hpads_placement') { echo '<div class="misc-pub-section"><button class="button" name="hwads_copy" value="template">Save as New Template</button> <a target="_blank" rel="noopener" href="'.esc_url(HPADS_Placements::preview_url($r['id'])).'">Preview Landing Page</a></div>'; }
+        if ($r && $post->post_type==='hpads_placement' && HPADS_Placements::author_owner(...HPADS_Workflow::owner_ref($r))) { echo '<div class="misc-pub-section"><button class="button" name="hwads_copy" value="template">Save as New Template</button> <a target="_blank" rel="noopener" href="'.esc_url(HPADS_Placements::preview_url($r['id'])).'">Preview Landing Page</a></div>'; }
     }
 }

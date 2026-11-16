@@ -28,6 +28,18 @@ class BrowserServerTests(unittest.TestCase):
         self.assertTrue(data[0]['qr_enabled']);self.assertEqual(data[0]['transition_in'],'wipe-circle');self.assertNotIn('SECRET',json.dumps(data))
         with self.assertRaises(urllib.error.HTTPError) as e:urllib.request.urlopen(self.url+'config/device.json')
         self.assertEqual(e.exception.code,404)
+    def test_mix_selection_is_private_idempotent_and_attributed(self):
+        mix={'enabled':True,'signature':'test','groups':[{'playlist_id':8,'weight':100,'items':[self.row]}],'fallback':[]}
+        atomic_json(self.root/'config/playlist.json',{'playback_mix':mix})
+        def choose(body,origin=None):
+            req=urllib.request.Request(self.url+'next',data=json.dumps(body).encode(),headers={'Origin':origin or self.base,'Content-Type':'application/json'})
+            with urllib.request.urlopen(req) as response:return json.load(response)
+        first=choose({'request_id':'test-1','elapsed':0});self.assertEqual(first['item']['version_id'],3);self.assertEqual(first['item']['mix_group'],'8');self.assertEqual(first['item']['placement_id'],2)
+        retry=choose({'request_id':'test-1','elapsed':0});self.assertEqual(first['token'],retry['token'])
+        with self.assertRaises(urllib.error.HTTPError) as error:choose({},'https://evil.test')
+        self.assertEqual(error.exception.code,403)
+        with self.assertRaises(urllib.error.HTTPError) as error:choose({'elapsed':-1})
+        self.assertEqual(error.exception.code,400)
     def test_media_byte_ranges_for_video(self):
         with urllib.request.urlopen(urllib.request.Request(self.url+'media/a.mp4',headers={'Range':'bytes=2-5'})) as r:
             self.assertEqual(r.status,206);self.assertEqual(r.read(),b'2345');self.assertEqual(r.headers['Content-Range'],'bytes 2-5/10')
@@ -51,5 +63,16 @@ class BrowserServerTests(unittest.TestCase):
         self.assertEqual(client.purge(),(1,3))
         self.assertFalse((self.root/'media/old.jpg').exists())
         for name in ['a.mp4','previous.jpg','playing.jpg','young.jpg']:self.assertTrue((self.root/'media'/name).exists())
+
+
+
+    def test_overlay_assets_are_local_and_scoped(self):
+        (self.root/'media/logo.png').write_bytes(b'logo')
+        self.row['overlays']=[{'type':'image','file':'logo.png','x':5,'y':5,'width':20}]
+        atomic_json(self.root/'config/playlist.json',{'primary':[self.row],'house':[]})
+        with urllib.request.urlopen(self.url+'playlist') as response:data=json.load(response)
+        self.assertEqual(data[0]['overlays'][0]['url'],'media/logo.png')
+        with urllib.request.urlopen(self.url+'media/logo.png') as response:self.assertEqual(response.read(),b'logo')
+        with self.assertRaises(urllib.error.HTTPError):urllib.request.urlopen(self.url+'media/unknown.png')
 
 if __name__=='__main__':unittest.main()

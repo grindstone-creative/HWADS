@@ -1,0 +1,8 @@
+<?php
+$_COOKIE['playground_auto_login_already_happened']='1';require '/wordpress/wp-load.php';wp_set_current_user(1);$_POST=[];define('ET_BUILDER_VERSION','4.20.4');$count=0;
+function divi_ok($c,$s){global $count;if(!$c)throw new Exception('FAIL: '.$s);$count++;echo "PASS: $s\n";}
+$f=json_decode(file_get_contents('/wordpress/wp-content/hwads-native-fixture.json'),true);$src=HPADS_Core::get($f['template']);$d=$src['data'];$d['description']='';$d['landing_layout_custom']=false;$id=HPADS_Core::put('creative','Divi starter test',$src['parent_id'],$d);$pid=HPADS_Storage::post_id($id);$_GET['post']=$pid;HPADS_Divi::initialize_default();
+$r=HPADS_Core::get($id);divi_ok($r['data']['description']===HPADS_Divi::starter(),'empty ad receives valid section row column and shortcode text modules');divi_ok(get_post_meta($pid,'_et_pb_use_builder',true)==='on' && get_post_meta($pid,'_hwads_divi_starter',true)==='1','starter activates Divi metadata');divi_ok(!HPADS_Divi::custom_layout($id),'generated starter does not override shared base design');
+$revision=$r['revision'];HPADS_Divi::initialize_default();divi_ok(HPADS_Core::get($id)['revision']===$revision,'reopening starter does not rewrite record');
+$d=$r['data'];$d['description']='[et_pb_section]My custom design[/et_pb_section]';$d['landing_layout_custom']=true;HPADS_Core::put('creative',$r['title'],$r['parent_id'],$d,$id,$r['revision']);HPADS_Divi::initialize_default();divi_ok(HPADS_Core::get($id)['data']['description']===$d['description'] && HPADS_Divi::custom_layout($id),'custom Divi layout remains untouched');
+$_GET=[];echo "DIVI STARTER TOTAL: $count checks passed (simulated Divi presence; theme not bundled)\n";

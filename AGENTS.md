@@ -1,3 +1,11 @@
+# HWADS project context
+
+- The user's cPanel does not have MultiPHP INI Editor. Do not suggest using it; base PHP configuration guidance on the controls actually available in their hosting account.
+
+# Client-facing terminology
+
+- Use **HWADS Box** for playback hardware in all client/viewer-facing text. Do not expose Raspberry Pi, Pi, operating system, browser, playback engine, or other implementation details in client-facing wording. Technical names may remain in internal code, protocols, paths, maintenance documentation and engineering chats when needed.
+
 # HWADS interface standard
 
 The user's standing preference is to use the standard WordPress interface unless it does not make sense for the task.

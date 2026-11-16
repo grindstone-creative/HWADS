@@ -1,0 +1,20 @@
+<?php
+require '/wordpress/wp-load.php';wp_set_current_user(1);
+function connection_ok($condition,$label){if(!$condition)throw new Exception('FAIL: '.$label);echo "PASS: $label\n";}
+$fixture=json_decode(file_get_contents('/wordpress/wp-content/hwads-native-fixture.json'),true);
+$p=HPADS_Core::get($fixture['playlist'],'playlist');$l=HPADS_Core::get($p['parent_id'],'location');
+$ad=HPADS_Core::get($p['data']['items'][0]['creative_id'],'creative');
+$rows=[['creative_id'=>$ad['id'],'active'=>false,'duration'=>333,'start'=>'2099-01-01T00:00','end'=>'']];
+$d=$ad['data'];$d['active']=true;$d['duration']=null;$d['start']='';$d['end']='';HPADS_Core::put('creative',$ad['title'],$ad['parent_id'],$d,$ad['id'],$ad['revision']);
+$refs=HPADS_Core::normalize_items($rows,$l,$p['id']);connection_ok($refs===[['creative_id'=>$ad['id']]],'modern playlist stores membership only, without duplicated settings');
+$resolved=HPADS_Core::normalize_items($rows,$l,$p['id'],true);connection_ok($resolved[0]['active'] && $resolved[0]['duration']===null && $resolved[0]['start']==='','placement owns Active, duration and schedule despite stale item values');
+$ad=HPADS_Core::get($ad['id']);connection_ok(HPADS_Core::inherited_duration($ad)===(int)$l['data']['duration'],'individual placement inherits its destination location duration');
+$wire=HPADS_API::player_manifest(['schema'=>1,'version_id'=>5,'playlist_id'=>7,'analytics_grant'=>'grant','published_at'=>'date','items'=>[['placement_id'=>3,'mime'=>'image/jpeg','duration_seconds'=>12,'landing'=>['description'=>'private-to-wire'],'title'=>'unused','attachment_id'=>5,'thumbnail_time'=>1,'overlays'=>[['type'=>'image','attachment_id'=>99,'url'=>'https://example.test/logo.png','sha256'=>'hash','bytes'=>3,'mime'=>'image/png']]]]]);
+connection_ok(!isset($wire['published_at']) && !isset($wire['items'][0]['landing']) && !isset($wire['items'][0]['thumbnail_time']) && !isset($wire['items'][0]['overlays'][0]['attachment_id']) && $wire['analytics_grant']==='grant','Pi wire manifest excludes unused metadata but retains playback and analytics');
+$health=json_decode(file_get_contents('/wordpress/wp-content/hwads-native-fixture.json'),true);$device=HPADS_Post_Types::record($health['device_pid']);global $wpdb;$wpdb->delete($wpdb->prefix.'hpads_status',['device_id'=>$device['id']]);
+$request=new WP_REST_Request('POST','/hpads/v1/devices/'.$device['id'].'/heartbeat');$request->set_header('content-type','application/json');$request->set_param('_hpads_authenticated_device',$device['id']);$request->set_body(wp_json_encode(['active_version'=>99999999,'state'=>'playing']));
+$request->set_param('_hpads_authenticated_device',$device['id']);$response=HPADS_API::heartbeat($request);connection_ok($response instanceof WP_REST_Response && $response->get_status()===200,'authenticated reassigned/offline player can still report health');
+$status=json_decode($wpdb->get_var($wpdb->prepare('SELECT payload FROM '.$wpdb->prefix.'hpads_status WHERE device_id=%d',$device['id'])),true);connection_ok($status['assignment_mismatch'] && $status['active_version']===99999999,'assignment mismatch is diagnostic instead of rejecting heartbeat');
+connection_ok(!isset($response->get_data()['playlist_url']) && !isset($response->get_data()['next_heartbeat_seconds']),'unused heartbeat response hints removed');
+$latest=HPADS_Core::get($p['id'],'playlist');$before_version=$latest['data']['published_version'];$frozen=HPADS_Core::version($before_version);$duplicate=$latest['data'];$duplicate['items']=$rows;HPADS_Core::put('playlist',$latest['title'],$latest['parent_id'],$duplicate,$latest['id'],$latest['revision']);delete_option('hwads_playlist_refs_schema');HPADS_Placements::upgrade_playlist_refs();$clean=HPADS_Core::get($p['id'],'playlist');
+connection_ok($clean['data']['items']===[['creative_id'=>$ad['id']]] && $clean['data']['published_version']===$before_version && HPADS_Core::version($before_version)===$frozen,'existing duplicate settings are removed without changing published snapshots');
